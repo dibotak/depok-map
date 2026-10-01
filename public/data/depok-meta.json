@@ -1,0 +1,28 @@
+{
+  "regency": "Kota Depok",
+  "province": "Jawa Barat",
+  "village_count": 63,
+  "district_count": 11,
+  "districts": [
+    "Beji",
+    "Bojongsari",
+    "Cilodong",
+    "Cimanggis",
+    "Cinere",
+    "Cipayung",
+    "Limo",
+    "Pancoran Mas",
+    "Sawangan",
+    "Sukma Jaya",
+    "Tapos"
+  ],
+  "bounds": [
+    106.716747,
+    -6.461283,
+    106.918848,
+    -6.314414
+  ],
+  "source": "HDX/BPS cod-ab-idn via JfrAziz/indonesia-district",
+  "license": "CC BY-IGO",
+  "vintage": "2020-04-01"
+}

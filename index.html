@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="id" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>depok-map — peta wilayah Kota Depok</title>
+<meta name="description" content="Peta interaktif 63 kelurahan di 11 kecamatan Kota Depok, Jawa Barat. Cari kelurahan, lihat Administrative hierarchy lengkap, dan salin kode BPS.">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f7f6f3">
+<link rel="stylesheet" href="/vendor/maplibre-gl.css">
+<link rel="stylesheet" href="/src/app.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232f6f4f'/%3E%3Cpath d='M8 9l4.5 15L16 15l3.5 9L24 9' stroke='%23fff' stroke-width='2.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+</head>
+<body>
+<a class="skip" href="#search">Lompat ke pencarian</a>
+
+<div id="map" role="application" aria-label="Peta wilayah Kota Depok"></div>
+
+<!-- search ------------------------------------------------------------ -->
+<div class="search" id="search">
+  <div class="search-box">
+    <svg class="i-search" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+      <circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/>
+    </svg>
+    <input id="q" type="search" autocomplete="off" spellcheck="false"
+           placeholder="Cari kelurahan atau kecamatan…"
+           aria-label="Cari kelurahan atau kecamatan di Kota Depok"
+           aria-expanded="false" aria-controls="results" role="combobox"
+           aria-autocomplete="list">
+    <button id="clear" class="clear" type="button" aria-label="Hapus pencarian" hidden>
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
+        <path d="M6 6l12 12M18 6L6 18"/>
+      </svg>
+    </button>
+    <button id="theme" class="theme" type="button" aria-label="Ganti tema" title="Ganti tema terang/gelap">
+      <svg class="i-sun" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <circle cx="12" cy="12" r="4.2"/>
+        <path d="M12 2.6v2.2M12 19.2v2.2M2.6 12h2.2M19.2 12h2.2M5.4 5.4l1.6 1.6M17 17l1.6 1.6M18.6 5.4L17 7M7 17l-1.6 1.6"/>
+      </svg>
+      <svg class="i-moon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <path d="M20 14.2A8.4 8.4 0 0 1 9.8 4 8.4 8.4 0 1 0 20 14.2z"/>
+      </svg>
+    </button>
+  </div>
+  <p class="search-meta" id="search-meta">63 kelurahan · 11 kecamatan · Kota Depok</p>
+  <ul class="results" id="results" role="listbox" aria-label="Hasil pencarian" hidden></ul>
+</div>
+
+<!-- answer card ------------------------------------------------------- -->
+<div class="card placeholder" id="card">
+  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+    <path d="M12 21s-7-5.6-7-11a7 7 0 1 1 14 0c0 5.4-7 11-7 11z"/><circle cx="12" cy="10" r="2.3"/>
+  </svg>
+  <p>Cari atau klik peta untuk tahu wilayah</p>
+</div>
+
+<!-- legend ------------------------------------------------------------ -->
+<div class="legend" id="legend" hidden>
+  <span><i class="sw sel"></i>Terpilih</span>
+  <span><i class="sw same"></i>Kecamatan sama</span>
+</div>
+
+<!-- map controls (maplibre) -->
+<div class="geo-note" id="geo-note" hidden>
+  <span id="geo-text"></span>
+</div>
+
+<footer class="attrib" id="attrib">
+  Boundaries © <a href="https://data.humdata.org/dataset/cod-ab-idn" rel="noopener">HDX/BPS</a> ·
+  <a href="https://github.com/JfrAziz/indonesia-district" rel="noopener">indonesia-district</a> (CC BY-IGO, 2020) ·
+  Map © <a href="https://www.openstreetmap.org/copyright" rel="noopener">OpenStreetMap</a> ·
+  <a href="https://openfreemap.org" rel="noopener">OpenFreeMap</a>
+</footer>
+
+<script src="/vendor/maplibre-gl.js"></script>
+<script src="/src/data.js"></script>
+<script src="/src/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,317 @@
+/* depok-map — light/dark themed over an OpenFreeMap basemap.
+   Tokens live on :root[data-theme]; every surface reads from them so the
+   basemap and the chrome can never drift out of sync. */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+:root {
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --shadow-1: 0 1px 2px rgba(16, 18, 15, .06), 0 2px 8px rgba(16, 18, 15, .06);
+  --shadow-2: 0 4px 12px rgba(16, 18, 15, .10), 0 12px 32px rgba(16, 18, 15, .10);
+
+  --dur: 160ms;
+  --ease: cubic-bezier(.32, .72, 0, 1);
+}
+
+:root[data-theme="light"] {
+  --bg: #f7f6f3;
+  --surface: rgba(255, 255, 255, .93);
+  --surface-solid: #fff;
+  --surface-2: #f2f1ec;
+  --border: rgba(24, 26, 22, .12);
+  --border-strong: rgba(24, 26, 22, .22);
+  --ink: #1b1d19;
+  --ink-2: #4a4d46;
+  --muted: #6d716a;
+  --faint: #8f948b;
+  --accent: #1f6b48;
+  --accent-ink: #fff;
+  --accent-soft: rgba(31, 107, 72, .10);
+  --hover: rgba(24, 26, 22, .05);
+  --theme-color: #f7f6f3;
+  --map-filter: none;
+}
+
+:root[data-theme="dark"] {
+  --bg: #12140f;
+  --surface: rgba(22, 25, 18, .93);
+  --surface-solid: #171a13;
+  --surface-2: #23271c;
+  --border: rgba(255, 255, 255, .13);
+  --border-strong: rgba(255, 255, 255, .24);
+  --ink: #f0efe9;
+  --ink-2: #c9ccc1;
+  --muted: #969a8d;
+  --faint: #7c8175;
+  --accent: #6fd39b;
+  --accent-ink: #0f1a12;
+  --accent-soft: rgba(111, 211, 155, .14);
+  --hover: rgba(255, 255, 255, .07);
+  --theme-color: #12140f;
+  --map-filter: none;
+}
+
+html, body { height: 100%; }
+body {
+  margin: 0;
+  font-family: var(--sans);
+  background: var(--bg);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+
+#map { position: absolute; inset: 0; background: var(--bg); }
+
+/* MapLibre chrome inherits our tokens so it doesn't stay light in dark mode. */
+.maplibregl-ctrl-group {
+  background: var(--surface) !important;
+  border: 1px solid var(--border) !important;
+  box-shadow: var(--shadow-1) !important;
+  border-radius: var(--r-sm) !important;
+  overflow: hidden;
+}
+.maplibregl-ctrl-group button + button { border-top: 1px solid var(--border) !important; }
+.maplibregl-ctrl-group button .maplibregl-ctrl-icon { filter: var(--ctrl-icon-filter, none); }
+:root[data-theme="dark"] { --ctrl-icon-filter: invert(1) brightness(1.6); }
+.maplibregl-ctrl-attrib {
+  display: none; /* replaced by our own attribution line, which carries the licence */
+}
+
+.skip {
+  position: absolute; left: 8px; top: -60px; z-index: 2000;
+  background: var(--accent); color: var(--accent-ink);
+  padding: 10px 15px; border-radius: var(--r-sm); font-size: 13.5px; font-weight: 600;
+  text-decoration: none; transition: top var(--dur) var(--ease);
+}
+.skip:focus { top: 8px; }
+
+/* ---------- search ---------- */
+.search {
+  position: absolute; z-index: 1000;
+  top: max(16px, env(safe-area-inset-top)); left: 50%;
+  transform: translateX(-50%);
+  width: min(520px, calc(100vw - 32px));
+}
+.search-box {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--surface);
+  -webkit-backdrop-filter: saturate(180%) blur(14px);
+  backdrop-filter: saturate(180%) blur(14px);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 0 8px 0 14px; height: 46px;
+  box-shadow: var(--shadow-2);
+  transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+.search-box:focus-within {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-2), 0 0 0 3px var(--accent-soft);
+}
+.i-search { color: var(--faint); flex: none; }
+#q {
+  flex: 1; min-width: 0; height: 100%;
+  background: none; border: 0; outline: 0;
+  font: inherit; font-size: 15px; color: var(--ink);
+}
+#q::placeholder { color: var(--faint); }
+#q::-webkit-search-cancel-button { display: none; }
+
+.clear, .theme {
+  flex: none; display: grid; place-items: center;
+  width: 30px; height: 30px; border-radius: 50%;
+  background: none; border: 0; cursor: pointer;
+  color: var(--muted); font-family: inherit;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+.clear:hover, .theme:hover { background: var(--hover); color: var(--ink); }
+.theme .i-moon { display: none; }
+:root[data-theme="dark"] .theme .i-sun { display: none; }
+:root[data-theme="dark"] .theme .i-moon { display: block; }
+
+.search-meta {
+  margin: 7px 0 0; text-align: center;
+  font-size: 11.5px; color: var(--ink-2); font-weight: 550;
+  text-shadow: 0 1px 2px var(--surface-solid), 0 0 8px var(--surface-solid);
+}
+
+.results {
+  list-style: none; margin: 8px 0 0; padding: 5px;
+  max-height: min(52vh, 380px); overflow-y: auto; overscroll-behavior: contain;
+  background: var(--surface);
+  -webkit-backdrop-filter: saturate(180%) blur(14px);
+  backdrop-filter: saturate(180%) blur(14px);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-2);
+}
+.results li {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 9px 12px; border-radius: var(--r-sm); cursor: pointer;
+  font-size: 14px; color: var(--ink);
+}
+.results li:hover, .results li[aria-selected="true"] { background: var(--hover); }
+.results li[aria-selected="true"] { box-shadow: inset 2px 0 0 var(--accent); }
+.results .r-name { font-weight: 520; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.results li.is-district .r-name { font-weight: 640; }
+.results .r-meta { font-size: 11.5px; color: var(--faint); flex: none; font-variant-numeric: tabular-nums; }
+.results mark { background: var(--accent-soft); color: inherit; border-radius: 3px; padding: 0 2px; font-weight: 650; }
+.results .empty { color: var(--muted); cursor: default; justify-content: center; }
+.results .empty:hover { background: none; }
+
+/* ---------- answer card ---------- */
+.card {
+  position: absolute; z-index: 900;
+  left: max(18px, env(safe-area-inset-left));
+  /* Clear the attribution strip, which sits bottom-right and is ~26px tall.
+     Without this the card overlapped it between 721px and ~1024px, where the
+     mobile rule does not apply but both elements are still near each other. */
+  bottom: calc(max(18px, env(safe-area-inset-bottom)) + 30px);
+  width: min(384px, calc(100vw - 36px));
+  background: var(--surface);
+  -webkit-backdrop-filter: saturate(180%) blur(14px);
+  backdrop-filter: saturate(180%) blur(14px);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-2);
+  overflow: hidden;
+}
+.card.placeholder {
+  display: flex; flex-direction: column; align-items: center; gap: 9px;
+  padding: 26px 22px; color: var(--muted); font-size: 13.5px; text-align: center;
+}
+.card.placeholder svg { color: var(--faint); opacity: .7; }
+.card.placeholder p { margin: 0; }
+.card[hidden] { display: none; }
+
+.card-top { padding: 16px 18px 13px; border-bottom: 1px solid var(--border); }
+.eyebrow {
+  font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--faint);
+}
+.card-name { font-size: 21px; font-weight: 650; letter-spacing: -.02em; margin-top: 4px; line-height: 1.2; }
+
+.ladder { padding: 12px 18px 14px; }
+.rung {
+  display: flex; align-items: baseline; gap: 9px;
+  padding: 5px 0; font-size: 13.5px;
+}
+.rung .lvl {
+  color: var(--faint); font-size: 11px; font-weight: 600;
+  min-width: 96px; flex: none; text-transform: uppercase; letter-spacing: .04em;
+}
+.rung .nm { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rung:last-child .nm { color: var(--ink); font-weight: 640; }
+.rung .dot {
+  width: 5px; height: 5px; border-radius: 50%; background: var(--accent);
+  flex: none; position: relative; top: -1px;
+}
+
+.card-foot {
+  padding: 10px 18px; border-top: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  background: var(--surface-2);
+}
+.code {
+  font-family: var(--mono); font-size: 11.5px; color: var(--ink-2);
+  background: var(--surface-solid); border: 1px solid var(--border);
+  padding: 3px 8px; border-radius: 6px;
+}
+.copy {
+  font: inherit; font-size: 11.5px; font-weight: 600; color: var(--muted);
+  background: none; border: 1px solid var(--border-strong);
+  border-radius: 6px; padding: 5px 11px; cursor: pointer;
+  transition: all var(--dur) var(--ease);
+}
+.copy:hover { color: var(--ink); border-color: var(--ink-2); }
+.copy.done { color: var(--accent); border-color: var(--accent); }
+
+/* ---------- legend ---------- */
+.legend {
+  position: absolute; z-index: 800; right: max(18px, env(safe-area-inset-right));
+  bottom: max(18px, env(safe-area-inset-bottom));
+  display: flex; flex-direction: column; gap: 6px;
+  background: var(--surface);
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+  border: 1px solid var(--border); border-radius: var(--r-sm);
+  padding: 9px 12px; font-size: 11.5px; color: var(--ink-2);
+  box-shadow: var(--shadow-1);
+}
+.legend[hidden] { display: none; }
+.legend span { display: flex; align-items: center; gap: 7px; }
+.sw { width: 11px; height: 11px; border-radius: 3px; border: 1px solid; }
+.sw.sel { background: var(--accent); border-color: var(--accent); }
+.sw.same { background: var(--accent-soft); border-color: var(--accent); }
+
+/* ---------- geolocation result ---------- */
+.geo-note {
+  position: absolute; z-index: 800;
+  top: calc(max(16px, env(safe-area-inset-top)) + 52px); left: 50%;
+  transform: translateX(-50%);
+  width: min(520px, calc(100vw - 32px));
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-sm); padding: 8px 13px;
+  font-size: 12px; color: var(--ink-2); box-shadow: var(--shadow-1);
+  display: flex; align-items: center; gap: 9px;
+}
+.geo-note[hidden] { display: none; }
+.geo-note b { color: var(--ink); font-weight: 620; }
+.geo-note button {
+  margin-left: auto; flex: none; font: inherit; font-size: 11.5px; font-weight: 600;
+  color: var(--muted); background: none; border: 1px solid var(--border-strong);
+  border-radius: 6px; padding: 3px 9px; cursor: pointer;
+}
+
+/* ---------- attribution ---------- */
+.attrib {
+  position: absolute; z-index: 700;
+  right: max(18px, env(safe-area-inset-right));
+  bottom: 0; max-width: min(560px, calc(100vw - 36px));
+  padding: 5px 10px; margin: 0 0 2px;
+  font-size: 10.5px; line-height: 1.5; color: var(--ink-2); text-align: right;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 6px 0 0 0;
+}
+.attrib a { color: var(--ink-2); text-decoration: underline; text-underline-offset: 2px; }
+.attrib a:hover { color: var(--accent); }
+
+/* ---------- mobile ---------- */
+@media (max-width: 720px) {
+  .search { top: max(10px, env(safe-area-inset-top)); width: calc(100vw - 20px); }
+  .search-box { height: 44px; padding-left: 12px; }
+  #q { font-size: 16px; /* 16px avoids iOS Safari's focus-zoom */ }
+  .search-meta { font-size: 11px; }
+
+  .card {
+    left: 10px; right: 10px; width: auto;
+    /* Measured: card bottom 808 vs attribution top 804 at 390x844 — the card
+       overlapped the licence line by 4px. The attribution is ~38px tall, so
+       clear it plus a gap rather than assuming a fixed height. */
+    bottom: calc(max(10px, env(safe-area-inset-bottom)) + 46px);
+  }
+  .card-name { font-size: 19px; }
+  .rung .lvl { min-width: 84px; }
+
+  /* The legend would sit on top of the card on a phone; the card already
+     names the kecamatan, so the legend is redundant there. */
+  .legend { display: none; }
+  .attrib {
+    left: 10px; right: 10px; max-width: none;
+    text-align: center; border-radius: 6px;
+    font-size: 9.5px; padding: 4px 8px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    transition-duration: .01ms !important;
+  }
+}
