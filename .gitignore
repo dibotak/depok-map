@@ -1,1 +1,4 @@
 shots/
+.venv-build/
+__pycache__/
+*.pyc

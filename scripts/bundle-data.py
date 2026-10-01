@@ -42,3 +42,31 @@ orphan = covered - codes
 if orphan:
     raise SystemExit(f"ERROR: kelurahan pointing at a missing kecamatan: {sorted(orphan)}")
 print(f"hierarchy consistent: {len(codes)} kecamatan cover all {len(covered)} district codes")
+
+# A district boundary must be DISSOLVED: one ring per disconnected piece, with no
+# interior child borders. An undissolved district ships one MultiPolygon part per
+# kelurahan, and MapLibre strokes every part's outline -- so `kec-line` redraws all
+# 63 child borders at city view and `kec-fill` paints 63 shapes where there should
+# be 11. build-districts.py used to do exactly that, and the result looked like a
+# basemap problem rather than a build problem, because the stray hairlines land
+# precisely where child boundaries belong.
+#
+# So assert the part count never exceeds the child count, and that a district with
+# several children did not come out with one ring per child.
+from shapely.geometry import shape  # noqa: E402
+
+for d in kec["features"]:
+    name = d["properties"]["district"]
+    n_kids = sum(1 for f in kel["features"] if f["properties"]["district_code"] == d["properties"]["district_code"])
+    g = shape(d["geometry"])
+    n_rings = len(g.geoms) if g.geom_type == "MultiPolygon" else 1
+    if n_rings > n_kids:
+        raise SystemExit(
+            f"ERROR: {name} has {n_rings} ring(s) for {n_kids} kelurahan -- "
+            f"the district boundary is not dissolved (see build-districts.py)"
+        )
+    if g.geom_type not in ("Polygon", "MultiPolygon"):
+        raise SystemExit(f"ERROR: {name} dissolved to {g.geom_type}")
+    if not g.is_valid:
+        raise SystemExit(f"ERROR: {name} is not a valid polygon")
+print("all 11 kecamatan dissolved: interior child borders removed")

@@ -110,15 +110,19 @@ let mapReady = false;
  *    neighbourhood names at city zoom. They read as "these are the kelurahan"
  *    when they are not, and they contradicted the drill-down.
  *
- * 2. `boundary_3`. The basemap draws its own administrative boundary lines
- *    (admin_level 3-4). Six of them rendered across Bojongsari, subdividing
- *    our seven kelurahan into shapes that do not match them — producing
- *    phantom areas with no name, and lines implying a hierarchy we do not
- *    publish. "Pancora" and a second "Sawangan" in that view are basemap
- *    features, not data errors: neither exists in the dataset.
+ * 2. The basemap's own administrative boundary lines. `boundary_3` draws OSM
+ *    admin_level 3-6, which in Indonesia stops at *kecamatan* — it does not
+ *    include kelurahan (level 7). So these are a second, independent set of
+ *    district edges: coarser, from OSM, and not the 2020 upstream geometry this
+ *    app publishes. Where the two disagree you see doubled edges and slivers.
+ *    Hidden alongside the village labels. We own geometry and labelling.
  *
- * We own both geometry and labelling, so both are hidden. The layer id is
- * basemap-specific: hide whatever exists, don't assume a name.
+ * NOTE: these layers were originally blamed for the subdivided look at city
+ * view. They were not the main cause — `kec-line` was drawing all 63 kelurahan
+ * borders because the district geometry was never dissolved. See
+ * scripts/build-districts.py and the assertion in scripts/bundle-data.py.
+ * Hiding the basemap layers is still correct (foreign admin geometry we do not
+ * publish), but it was never sufficient.
  */
 const BASEMAP_LABEL_LAYERS = ['label_village', 'place_labels', 'place_subdivision'];
 const BASEMAP_ADMIN_LAYERS = ['boundary_3', 'boundary_2', 'boundary_4', 'boundary'];

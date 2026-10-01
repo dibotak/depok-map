@@ -6,18 +6,38 @@ The upstream repo stores each administrative level in its own file:
     id3276_kota_depok.geojson                <- 63 kelurahan (build-data.py)
     id3276031_cilodong.geojson               <- district-level, one per kecamatan
 
-Using the district files directly is better than dissolving the kelurahan
-ourselves: the upstream geometry is the authoritative published boundary, so
-stitching 63 polygons back together would both risk gaps along shared edges and
-invent a shape BPS never published.
-
 The file names are discovered from the repo listing rather than hardcoded, so a
 renamed kecamatan surfaces as a clear failure instead of a silently missing area.
+
+DISSOLVING IS REQUIRED, NOT OPTIONAL
+-------------------------------------
+The upstream per-kecamatan file does NOT contain one district polygon. It contains
+one feature per *kelurahan* inside that district, each carrying the district's
+own name. `id3276031_cilodong.geojson` ships 5 features -- Cilodong, Jatimulya,
+Kalibaru, Kalimulya, Sukamaju -- i.e. the five children, not the parent.
+
+Collecting those parts into a MultiPolygon (the previous approach) therefore does
+not produce a district boundary at all. MapLibre strokes every part's outline, so
+the shared edges between children are drawn too: `kec-line` rendered all 63
+kelurahan borders at city view, and `kec-fill` painted 63 shapes where there should
+be 11. That reads as "the whole thing is subdivided" and looks like a basemap
+problem, because the extra hairlines sit exactly where child boundaries would be.
+
+So the children are unioned per district_code here. The result is one polygon per
+kecamatan with the interior edges removed -- which is the published boundary the
+app actually intends to draw. Overlaps are expected (children share edges, not
+areas) and `unary_union` absorbs them.
+
+This dissolves the upstream *district* file's parts. The 63 kelurahan polygons in
+src/data.js are untouched and remain the authoritative drill-down geometry.
 """
 import json
 import sys
 import urllib.request
 from pathlib import Path
+
+from shapely.geometry import MultiPolygon, Polygon, shape
+from shapely.ops import unary_union
 
 API = "https://api.github.com/repos/JfrAziz/indonesia-district/contents"
 RAW = "https://raw.githubusercontent.com/JfrAziz/indonesia-district/master"
@@ -54,12 +74,56 @@ def strip(coords):
     return [strip(x) for x in coords]
 
 
-def geometry_out(g):
-    if g["type"] == "Polygon":
-        return {"type": "Polygon", "coordinates": strip(round_coords(g["coordinates"]))}
-    if g["type"] == "MultiPolygon":
-        return {"type": "MultiPolygon", "coordinates": strip(round_coords(g["coordinates"]))}
-    raise SystemExit(f"unexpected geometry type {g['type']}")
+def geometry_out(geom):
+    """Shapely geometry -> GeoJSON, rounded, with duplicate vertices dropped.
+
+    Rounding must happen *after* the union: rounding first can nudge shared edges
+    apart by a rounding error, and the union would then keep a sliver instead of
+    absorbing the seam.
+    """
+    if geom.is_empty:
+        raise ValueError("empty geometry")
+    if isinstance(geom, Polygon):
+        coords = [list(geom.exterior.coords)]
+        for ring in geom.interiors:
+            coords.append(list(ring.coords))
+        return {"type": "Polygon", "coordinates": strip(round_coords(coords))}
+    if isinstance(geom, MultiPolygon):
+        return {
+            "type": "MultiPolygon",
+            "coordinates": strip(round_coords([list(p.exterior.coords) for p in geom.geoms])),
+        }
+    raise SystemExit(f"unexpected dissolved geometry type {geom.geom_type}")
+
+
+def dissolve(parts):
+    """Union the parts of one district into a single geometry.
+
+    Children of a district share edges, so `unary_union` welds them and drops the
+    interior boundaries. What remains is the district outline: one ring per
+    disconnected piece, with no seams.
+    """
+    geoms = [shape(g) for g in parts]
+    union = unary_union(geoms)
+
+    # A district that dissolves to a bare line or point means the children did not
+    # actually cover an area. Fail loudly rather than emit geometry that renders
+    # as nothing and is indistinguishable from a styling bug.
+    if union.geom_type not in ("Polygon", "MultiPolygon"):
+        raise SystemExit(f"district dissolved to {union.geom_type}, expected an area")
+
+    # Repair any self-touching the weld leaves behind, so MapLibre's even-odd
+    # fill rule does not punch holes in the district.
+    if not union.is_valid:
+        sys.stderr.write("  repairing invalid dissolve\n")
+        union = union.buffer(0)
+        if union.geom_type == "GeometryCollection":
+            polys = [g for g in union.geoms if g.geom_type in ("Polygon", "MultiPolygon")]
+            if not polys:
+                raise SystemExit("dissolve produced no usable polygon")
+            union = unary_union(polys)
+
+    return union
 
 
 def main():
@@ -90,9 +154,9 @@ def main():
             sys.stderr.write(f"  SKIP {name}: no features\n")
             continue
 
-        # One file = one kecamatan, but a boundary may be split into several
-        # features; merge them by dissolving is wrong, so keep each part and let
-        # the name carry the identity.
+        # One file = one kecamatan, but it ships one feature per *child*
+        # kelurahan. Collect the raw geometries per district_code and dissolve
+        # them below; keeping the parts would redraw every child border.
         for f in feats:
             p = f["properties"]
             out = {k: p.get(k) for k in KEEP}
@@ -102,12 +166,13 @@ def main():
             features.append({
                 "type": "Feature",
                 "properties": out,
-                "geometry": geometry_out(f["geometry"]),
+                "geometry": f["geometry"],
             })
         sys.stderr.write(f"  ok {name} ({len(feats)} part(s))\n")
 
-    # Merge parts that share a district_code into one MultiPolygon feature, so
-    # clicking any part selects the whole kecamatan.
+    # Dissolve per district_code. The result is one polygon per kecamatan with the
+    # interior child borders removed -- see the module docstring for why this is
+    # load-bearing rather than cosmetic.
     by_code = {}
     for f in features:
         by_code.setdefault(f["properties"]["district_code"], {"props": f["properties"], "parts": []})
@@ -115,14 +180,18 @@ def main():
 
     merged = []
     for code, v in sorted(by_code.items(), key=lambda kv: kv[1]["props"]["district"]):
-        if len(v["parts"]) == 1:
-            geom = v["parts"][0]
-        else:
-            polys = []
-            for g in v["parts"]:
-                polys.extend(g["coordinates"] if g["type"] == "Polygon" else g["coordinates"])
-            geom = {"type": "MultiPolygon", "coordinates": polys}
+        n_parts = len(v["parts"])
+        try:
+            union = dissolve(v["parts"])
+        except Exception as e:
+            raise SystemExit(f"{v['props']['district']}: dissolve failed: {e}")
+        geom = geometry_out(union)
+        n_out = len(geom["coordinates"]) if geom["type"] == "MultiPolygon" else 1
         merged.append({"type": "Feature", "properties": v["props"], "geometry": geom})
+        sys.stderr.write(
+            f"  dissolved {v['props']['district']:16} {n_parts:>2} part(s) -> "
+            f"{geom['type']} with {n_out} ring(s)\n"
+        )
 
     payload = {"type": "FeatureCollection", "features": merged}
     out_file = OUT_DIR / "depok-kecamatan.json"
