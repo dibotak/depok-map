@@ -1,18 +1,27 @@
-/* depok-map — which kelurahan/kecamatan was that place in?
+/* depok-map — "which kelurahan/kecamatan was that place in?"
  *
- * Boundaries: 63 kelurahan of Kota Depok (HDX/BPS cod-ab-idn, CC BY-IGO).
- * Basemap: OpenFreeMap (OpenMapTiles schema, OSM data). No API key.
+ * Two administrative levels, drilled down one at a time:
  *
- * Everything runs client-side: the hierarchy is denormalised into every feature
- * (district_code / village_code), so drill-down is a filter and no server or
- * reverse-geocoder is involved.
+ *   city view        11 kecamatan outlines; click one to drill in
+ *   kecamatan view   that kecamatan's kelurahan; click one to select
+ *
+ * Boundaries: HDX/BPS cod-ab-idn via JfrAziz/indonesia-district (CC BY-IGO).
+ * Basemap:    OpenFreeMap (OpenMapTiles schema, OSM data). No API key.
+ *
+ * Everything is client-side. Each feature carries its parent's code
+ * (village_code / district_code), so filtering children is a lookup and no
+ * server or reverse-geocoder is involved.
  */
 'use strict';
 
 const DATA = window.DEPOK;
-const FEATURES = DATA.features;
+const KEL = DATA.features;
+const KEC = DATA.districts;
 const META = DATA.meta;
-const BY_NAME = new Map(FEATURES.map(f => [f.properties.village, f]));
+
+const KEL_BY_NAME = new Map(KEL.map(f => [f.properties.village, f]));
+const KEC_BY_NAME = new Map(KEC.map(f => [f.properties.district, f]));
+const KEC_BY_CODE = new Map(KEC.map(f => [f.properties.district_code, f]));
 
 /* ---------- basemap styles ---------- */
 const STYLES = {
@@ -24,14 +33,22 @@ const STYLES = {
 const state = {
   theme: localStorage.getItem('depok-theme')
     || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'),
-  selected: null,   // village name
-  active: -1,       // keyboard cursor in the results list
+  view: 'city',      // 'city' | 'kecamatan'
+  district: null,    // district_code of the open kecamatan
+  village: null,     // selected village name
+  active: -1,        // keyboard cursor in the results list
 };
 
-/* ---------- palette (matches app.css tokens) ---------- */
+/* ---------- palette (mirrors the tokens in app.css) ---------- */
 const PALETTE = {
-  light: { sel: '#1f6b48', selFill: '#1f6b48', same: '#7aa892', line: '#8a9a90', idle: 'rgba(0,0,0,0)' },
-  dark:  { sel: '#6fd39b', selFill: '#6fd39b', same: '#3d6b52', line: '#4a5a4e', idle: 'rgba(0,0,0,0)' },
+  light: {
+    sel: '#1f6b48', selFill: '#1f6b48', peer: '#4f8f6d', peerFill: '#5c9a79',
+    line: '#8a9a90', ink: '#2c3a31', halo: '#ffffff',
+  },
+  dark: {
+    sel: '#6fd39b', selFill: '#6fd39b', peer: '#3f7f5c', peerFill: '#38745a',
+    line: '#4a5a4e', ink: '#d8e6dc', halo: '#10130e',
+  },
 };
 
 /* ---------- map ---------- */
@@ -39,10 +56,10 @@ const map = new maplibregl.Map({
   container: 'map',
   style: STYLES[state.theme],
   bounds: META.bounds,
-  fitBoundsOptions: { padding: 48 },
+  fitBoundsOptions: { padding: 40 },
   minZoom: 9,
   maxZoom: 17,
-  attributionControl: false, // we render our own, licence-complete line
+  attributionControl: false, // our own licence-complete line instead
   dragRotate: false,
   pitchWithRotate: false,
 });
@@ -50,50 +67,150 @@ const map = new maplibregl.Map({
 map.addControl(new maplibregl.NavigationControl({ visualizePitch: false }), 'top-right');
 map.addControl(new maplibregl.ScaleControl({ maxWidth: 110, unit: 'metric' }), 'bottom-right');
 
-const SRC = 'depok';
+const SRC_KEC = 'kecamatan';
+const SRC_KEL = 'kelurahan';
 let mapReady = false;
 
+/**
+ * Repaint for the current view.
+ *
+ * At city view the 11 kecamatan carry the whole visual — the kelurahan overlay
+ * is hidden outright, because drawing 63 sub-areas over 11 parent areas reads
+ * as noise rather than hierarchy. At kecamatan view the kecamatan outline
+ * stays as a thin frame while its children carry the fill.
+ */
 function paint() {
   if (!mapReady) return;
   const p = PALETTE[state.theme];
-  const sel = state.selected;
-  const selDistrict = sel ? BY_NAME.get(sel).properties.district_code : null;
 
-  // Build the expression by accumulating cases, so the conditional stays valid
-  // when there is no selection (a ternary in the middle of an array literal
-  // silently produces a hole).
-  const isSel = ['==', ['get', 'village'], sel];
-  const isSame = selDistrict ? ['==', ['get', 'district_code'], selDistrict] : null;
+  if (state.view === 'city') {
+    map.setPaintProperty('kec-fill', 'fill-color', p.peerFill);
+    map.setPaintProperty('kec-fill', 'fill-opacity', 0.12);
+    map.setPaintProperty('kec-line', 'line-color', p.line);
+    map.setPaintProperty('kec-line', 'line-width', 1.4);
+    map.setPaintProperty('kec-label', 'text-color', p.sel);
+    map.setPaintProperty('kec-label', 'text-halo-color', p.halo);
+    map.setLayoutProperty('kel-fill', 'visibility', 'none');
+    map.setLayoutProperty('kel-line', 'visibility', 'none');
+    map.setLayoutProperty('kel-label', 'visibility', 'none');
+    return;
+  }
 
-  map.setPaintProperty('kel-fill', 'fill-color',
-    isSame ? ['case', isSel, p.selFill, isSame, p.same, p.idle] : p.idle);
+  map.setLayoutProperty('kel-fill', 'visibility', 'visible');
+  map.setLayoutProperty('kel-line', 'visibility', 'visible');
 
+  // Only the open kecamatan's children get labels — 63 names at once would be
+  // unreadable and would fight the basemap for attention.
+  map.setFilter('kel-label', ['==', ['get', 'district_code'], state.district]);
+  map.setLayoutProperty('kel-label', 'visibility', 'visible');
+  map.setPaintProperty('kel-label', 'text-color', p.ink);
+  map.setPaintProperty('kel-label', 'text-halo-color', p.halo);
+
+  const isSel = ['==', ['get', 'village'], state.village];
+  const isOpen = ['==', ['get', 'district_code'], state.district];
+
+  // Selected kelurahan solid, the rest of the open kecamatan lightly tinted,
+  // and everything outside it faint — so the open kecamatan reads as one unit.
+  map.setPaintProperty('kel-fill', 'fill-color', p.selFill);
   map.setPaintProperty('kel-fill', 'fill-opacity',
-    isSame ? ['case', isSel, 0.55, isSame, 0.16, 0.04] : 0.04);
-
+    ['case', isSel, 0.62, isOpen, 0.16, 0.04]);
   map.setPaintProperty('kel-line', 'line-color',
-    isSame ? ['case', isSel, p.sel, isSame, p.same, p.line] : p.line);
-
+    ['case', isSel, p.sel, p.line]);
   map.setPaintProperty('kel-line', 'line-width',
-    isSame ? ['case', isSel, 2.5, 1] : 1);
+    ['case', isSel, 2.5, isOpen, 1.2, 0.8]);
+
+  map.setPaintProperty('kec-fill', 'fill-color', p.selFill);
+  map.setPaintProperty('kec-fill', 'fill-opacity', 0.03);
+  map.setPaintProperty('kec-line', 'line-color', p.sel);
+  map.setPaintProperty('kec-line', 'line-width', 1.8);
+  // At kecamatan view the open district's own label would sit on top of its
+  // children's names, so it fades out.
+  map.setLayoutProperty('kec-label', 'visibility', 'none');
 }
 
 function addLayers() {
-  // Guard both halves: addSource throws if the source exists, and a duplicate
+  // Guard each half: addSource throws if the source exists, and a duplicate
   // layer id is equally fatal. Either one aborts the rest of addLayers().
-  if (!map.getSource(SRC)) {
-    map.addSource(SRC, { type: 'geojson', data: DATA, promoteId: 'village' });
+  if (!map.getSource(SRC_KEC)) {
+    map.addSource(SRC_KEC, { type: 'geojson', data: { type: 'FeatureCollection', features: KEC } });
+  }
+  if (!map.getLayer('kec-fill')) {
+    map.addLayer({
+      id: 'kec-fill', type: 'fill', source: SRC_KEC,
+      paint: { 'fill-color': PALETTE[state.theme].peerFill, 'fill-opacity': 0.12 },
+    });
+  }
+  if (!map.getLayer('kec-line')) {
+    map.addLayer({
+      id: 'kec-line', type: 'line', source: SRC_KEC,
+      paint: { 'line-color': PALETTE[state.theme].line, 'line-width': 1.4, 'line-opacity': 0.9 },
+    });
+  }
+  // Label the 11 kecamatan at city view. Without this the map shows outlines
+  // but no names, so the reader has to click each one to learn what it is.
+  if (!map.getLayer('kec-label')) {
+    map.addLayer({
+      id: 'kec-label', type: 'symbol', source: SRC_KEC,
+      layout: {
+        'text-field': ['get', 'district'],
+        'text-size': ['interpolate', ['linear'], ['zoom'], 10, 11, 13, 14],
+        'text-font': ['Noto Sans Bold'],
+        'text-anchor': 'center',
+        'text-allow-overlap': false,
+        'text-optional': true,
+      },
+      paint: {
+        'text-color': PALETTE[state.theme].sel,
+        'text-halo-color': PALETTE[state.theme].halo,
+        'text-halo-width': 1.6,
+        'text-halo-blur': 0.6,
+      },
+    });
+  }
+
+  if (!map.getSource(SRC_KEL)) {
+    // Must be an explicit FeatureCollection. DATA also carries `meta` and
+    // `districts`, and passing that object straight through leaves `type`
+    // undefined — the source then loads but resolves zero features, so the
+    // layer renders nothing at all.
+    map.addSource(SRC_KEL, {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features: KEL },
+      promoteId: 'village',
+    });
   }
   if (!map.getLayer('kel-fill')) {
     map.addLayer({
-      id: 'kel-fill', type: 'fill', source: SRC,
-      paint: { 'fill-color': PALETTE[state.theme].idle, 'fill-opacity': 0.04 },
+      id: 'kel-fill', type: 'fill', source: SRC_KEL,
+      paint: { 'fill-color': PALETTE[state.theme].selFill, 'fill-opacity': 0.04 },
     });
   }
   if (!map.getLayer('kel-line')) {
     map.addLayer({
-      id: 'kel-line', type: 'line', source: SRC,
+      id: 'kel-line', type: 'line', source: SRC_KEL,
       paint: { 'line-color': PALETTE[state.theme].line, 'line-width': 1, 'line-opacity': 0.8 },
+    });
+  }
+  // Label the open kecamatan's kelurahan. 63 names at once would be unreadable
+  // and would compete with the basemap, so this only appears once drilled in.
+  if (!map.getLayer('kel-label')) {
+    map.addLayer({
+      id: 'kel-label', type: 'symbol', source: SRC_KEL,
+      filter: ['==', ['get', 'district_code'], ''],  // replaced by paint()
+      layout: {
+        'text-field': ['get', 'village'],
+        'text-size': ['interpolate', ['linear'], ['zoom'], 11, 10, 14, 13],
+        'text-font': ['Noto Sans Regular'],
+        'text-anchor': 'center',
+        'text-allow-overlap': false,
+        'text-optional': true,
+      },
+      paint: {
+        'text-color': PALETTE[state.theme].ink,
+        'text-halo-color': PALETTE[state.theme].halo,
+        'text-halo-width': 1.6,
+        'text-halo-blur': 0.6,
+      },
     });
   }
   mapReady = true;
@@ -102,93 +219,206 @@ function addLayers() {
 
 map.on('load', addLayers);
 
-map.on('click', 'kel-fill', e => {
+/* Click routing by level: a kecamatan click drills in, a kelurahan click
+   selects. Guards keep a click from re-firing the other level's handler. */
+map.on('click', 'kec-fill', e => {
+  if (state.view !== 'city') return;
   const f = e.features && e.features[0];
-  if (f) select(f.properties.village);
+  if (f) openDistrict(f.properties.district_code);
 });
 
-map.on('mousemove', 'kel-fill', () => {
-  map.getCanvas().style.cursor = 'pointer';
-});
-map.on('mouseout', 'kel-fill', () => {
-  map.getCanvas().style.cursor = '';
+map.on('click', 'kel-fill', e => {
+  if (state.view !== 'kecamatan') return;
+  const f = e.features && e.features[0];
+  if (f) selectVillage(f.properties.village);
 });
 
-/* ---------- selection ---------- */
-function select(name, opts = {}) {
-  const f = BY_NAME.get(name);
-  if (!f) return;
-  state.selected = name;
+for (const layer of ['kec-fill', 'kel-fill']) {
+  map.on('mousemove', layer, () => { map.getCanvas().style.cursor = 'pointer'; });
+  map.on('mouseout', layer, () => { map.getCanvas().style.cursor = ''; });
+}
+
+/* ---------- bounds ---------- */
+/**
+ * Bounding box of a GeoJSON geometry.
+ *
+ * Computed by walking coordinates directly. fitBounds() on an empty box
+ * silently leaves the camera where it was, which looks like "zoom is broken"
+ * rather than an error.
+ */
+function boundsOfCoords(coords) {
+  const b = new maplibregl.LngLatBounds();
+  const walk = c => (typeof c[0] === 'number' ? b.extend(c) : c.forEach(walk));
+  walk(coords);
+  return b;
+}
+const boundsOf = f => boundsOfCoords(f.geometry.coordinates);
+
+/* ---------- navigation ---------- */
+const VIEW_PADDING = { top: 110, bottom: 230, left: 70, right: 70 };
+
+function goCity(opts = {}) {
+  state.view = 'city';
+  state.district = null;
+  state.village = null;
   paint();
+  renderCard();
+  renderBack();
+  if (opts.zoom !== false) {
+    map.fitBounds(boundsOfCoords([META.bounds]), {
+      padding: { top: 100, bottom: 200, left: 56, right: 56 }, duration: 700,
+    });
+  }
+  history.replaceState(null, '', location.pathname + location.search);
+}
 
-  const p = f.properties;
-  const card = document.getElementById('card');
+function openDistrict(code, opts = {}) {
+  const kec = KEC_BY_CODE.get(code);
+  if (!kec) return;
+  state.view = 'kecamatan';
+  state.district = code;
+  state.village = null;
+  paint();
+  renderCard(kec);
+  renderBack();
+  if (opts.zoom !== false) {
+    map.fitBounds(boundsOf(kec), { padding: VIEW_PADDING, maxZoom: 14.5, duration: 700 });
+  }
+  history.replaceState(null, '', '#kec/' + encodeURIComponent(code));
+}
+
+function selectVillage(name, opts = {}) {
+  const f = KEL_BY_NAME.get(name);
+  if (!f) return;
+  state.village = name;
+  // Selecting a kelurahan from search must also open its kecamatan, otherwise
+  // the highlight would land on a hidden layer.
+  state.district = f.properties.district_code;
+  state.view = 'kecamatan';
+  paint();
+  renderCard();
+  renderBack();
+  if (opts.zoom !== false) {
+    map.fitBounds(boundsOf(f), {
+      padding: { top: 120, bottom: 250, left: 70, right: 70 }, maxZoom: 15.5, duration: 700,
+    });
+  }
+  history.replaceState(null, '', '#' + encodeURIComponent(f.properties.village_code));
+}
+
+function selectDistrict(name, opts = {}) {
+  const f = KEC_BY_NAME.get(name);
+  if (f) openDistrict(f.properties.district_code, opts);
+}
+
+/* ---------- card ---------- */
+const card = document.getElementById('card');
+const legend = document.getElementById('legend');
+
+/**
+ * Names come from an external dataset, so every one of them goes into the DOM
+ * via textContent — never innerHTML.
+ */
+function renderCard(kecOverride) {
+  legend.hidden = state.view === 'city';
+
+  if (state.view === 'city') {
+    card.className = 'card';
+    card.innerHTML = `
+      <div class="card-top">
+        <div class="eyebrow">Kota Depok</div>
+        <div class="card-name"></div>
+      </div>
+      <div class="ladder">
+        <div class="rung"><i class="dot"></i><span class="lvl">Provinsi</span><span class="nm prov"></span></div>
+        <div class="rung"><i class="dot"></i><span class="lvl">Wilayah</span><span class="nm scope"></span></div>
+      </div>
+      <div class="card-foot">
+        <span class="hint">Klik kecamatan di peta untuk masuk</span>
+      </div>`;
+    card.querySelector('.card-name').textContent = META.regency;
+    card.querySelector('.prov').textContent = META.province;
+    card.querySelector('.scope').textContent =
+      `${META.district_count} kecamatan · ${META.village_count} kelurahan`;
+    return;
+  }
+
+  const kec = kecOverride || KEC_BY_CODE.get(state.district);
+  if (!kec) { goCity(); return; }
+  const kp = kec.properties;
+
+  const kids = KEL.filter(f => f.properties.district_code === kp.district_code);
+  const sel = state.village ? KEL_BY_NAME.get(state.village) : null;
+  const sp = sel ? sel.properties : null;
+
   card.className = 'card';
   card.innerHTML = `
     <div class="card-top">
-      <div class="eyebrow">Kelurahan dipilih</div>
+      <div class="eyebrow"></div>
       <div class="card-name"></div>
     </div>
-    <div class="ladder">
-      <div class="rung"><i class="dot"></i><span class="lvl">Kecamatan</span><span class="nm"></span></div>
-      <div class="rung"><i class="dot"></i><span class="lvl">Kabupaten</span><span class="nm"></span></div>
-      <div class="rung"><i class="dot"></i><span class="lvl">Provinsi</span><span class="nm"></span></div>
-    </div>
+    <div class="ladder"></div>
     <div class="card-foot">
       <span class="code"></span>
-      <button class="copy" type="button">Salin kode</button>
+      <button class="copy" type="button"></button>
     </div>`;
-  // textContent, not innerHTML: names come from an external dataset.
-  card.querySelector('.card-name').textContent = p.village;
-  const nms = card.querySelectorAll('.rung .nm');
-  nms[0].textContent = p.district;
-  nms[1].textContent = p.regency;
-  nms[2].textContent = p.province;
-  card.querySelector('.code').textContent = p.village_code;
 
-  const btn = card.querySelector('.copy');
-  btn.addEventListener('click', async () => {
-    try {
-      await navigator.clipboard.writeText(p.village_code);
-      btn.textContent = 'Tersalin';
-      btn.classList.add('done');
-      setTimeout(() => { btn.textContent = 'Salin kode'; btn.classList.remove('done'); }, 1600);
-    } catch {
-      // Clipboard needs a secure context; fall back to a manual selection.
-      const r = document.createRange();
-      r.selectNode(card.querySelector('.code'));
-      const sel = getSelection();
-      sel.removeAllRanges(); sel.addRange(r);
-      btn.textContent = 'Pilih manual';
-      setTimeout(() => { btn.textContent = 'Salin kode'; }, 1600);
-    }
-  });
+  card.querySelector('.eyebrow').textContent = sp ? 'Kelurahan dipilih' : 'Kecamatan';
+  card.querySelector('.card-name').textContent = sp ? sp.village : kp.district;
 
-  document.getElementById('legend').hidden = false;
-
-  if (opts.zoom !== false) {
-    map.fitBounds(boundsOf(f), { padding: { top: 130, bottom: 220, left: 80, right: 80 }, maxZoom: 15.5, duration: 700 });
+  const ladder = card.querySelector('.ladder');
+  const rungs = [['Kecamatan', kp.district], ['Kabupaten', kp.regency], ['Provinsi', kp.province]];
+  if (sp) rungs.unshift(['Kelurahan', sp.village]);
+  for (const [lvl, val] of rungs) {
+    const row = document.createElement('div');
+    row.className = 'rung';
+    const dot = document.createElement('i'); dot.className = 'dot';
+    const l = document.createElement('span'); l.className = 'lvl'; l.textContent = lvl;
+    const v = document.createElement('span'); v.className = 'nm'; v.textContent = val;
+    row.append(dot, l, v);
+    ladder.append(row);
   }
-  // Deep-link the selection so a found area can be shared or reloaded.
-  history.replaceState(null, '', '#' + encodeURIComponent(p.village_code));
+
+  const codeEl = card.querySelector('.code');
+  const btn = card.querySelector('.copy');
+
+  if (sp) {
+    codeEl.textContent = sp.village_code;
+    btn.textContent = 'Salin kode';
+    btn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(sp.village_code);
+        btn.textContent = 'Tersalin';
+        btn.classList.add('done');
+        setTimeout(() => { btn.textContent = 'Salin kode'; btn.classList.remove('done'); }, 1600);
+      } catch {
+        // Clipboard needs a secure context; fall back to a manual selection.
+        const r = document.createRange();
+        r.selectNode(codeEl);
+        const s = getSelection();
+        s.removeAllRanges(); s.addRange(r);
+        btn.textContent = 'Pilih manual';
+        setTimeout(() => { btn.textContent = 'Salin kode'; }, 1600);
+      }
+    });
+  } else {
+    codeEl.textContent = kp.district_code;
+    btn.textContent = `Lihat ${kids.length} kelurahan`;
+    btn.addEventListener('click', () => {
+      const input = document.getElementById('q');
+      input.value = kp.district;
+      input.dispatchEvent(new Event('input'));
+      input.focus();
+    });
+  }
 }
 
-/**
- * Bounding box of a feature's geometry.
- *
- * Computed by walking coordinates directly. There is no maplibregl.LngLatBounds
- * convenience for a bare GeoJSON geometry, and fitBounds() on an empty box
- * silently leaves the camera where it was — which looks like "zoom is broken"
- * rather than an error.
- */
-function boundsOf(f) {
-  const b = new maplibregl.LngLatBounds();
-  const walk = coords => {
-    if (typeof coords[0] === 'number') b.extend(coords);
-    else coords.forEach(walk);
-  };
-  walk(f.geometry.coordinates);
-  return b;
+/* ---------- back button ---------- */
+const backBtn = document.getElementById('back');
+
+function renderBack() {
+  backBtn.hidden = state.view === 'city';
+  if (state.view !== 'city') backBtn.querySelector('span').textContent = 'Semua kecamatan';
 }
 
 /* ---------- search ---------- */
@@ -197,7 +427,7 @@ const results = document.getElementById('results');
 const clearBtn = document.getElementById('clear');
 
 /**
- * Fuzzy match a single field. Lower is better; -1 means no match.
+ * Fuzzy match one field. Lower is better; -1 means no match.
  * exact 0 < prefix 1 < substring 2 < subsequence 3.
  */
 function score(hay, needle) {
@@ -219,31 +449,54 @@ function score(hay, needle) {
  * Taking Math.min() across the name and district scores is wrong: for "jagak",
  * Jagakarsa scores 1 on its own name, but every kelurahan inside the Jagakarsa
  * district scores -1 on name and 1 on district, so min() promoted the siblings
- * and put Ciganjur above the actual prefix match. Order here is
- * name -> code -> district siblings (always last).
+ * and put Ciganjur above the actual prefix match.
+ *
+ * Order here: name -> code -> district sibling (always last). A kecamatan
+ * result only outranks a kelurahan when the kecamatan name is the better
+ * match on its own name; otherwise the specific kelurahan wins.
  */
-function rank(qRaw) {
-  const needle = qRaw.trim().toLowerCase();
+function rank(raw) {
+  const needle = raw.trim().toLowerCase();
   if (!needle) return [];
+
   const out = [];
-  for (const f of FEATURES) {
+
+  // Kecamatan, by name or code. These are the entry point at city view.
+  for (const f of KEC) {
     const p = f.properties;
-    const nameScore = score(p.village, needle);
-    const districtScore = score(p.district, needle);
-    const codeHit = String(p.village_code).toLowerCase().includes(needle);
+    const ns = score(p.district, needle);
     let s;
-    if (nameScore >= 0) s = nameScore;
-    else if (codeHit) s = 1.5;
-    else if (districtScore >= 0) s = 4 + districtScore;
+    if (ns >= 0) s = ns;
+    else if (String(p.district_code).toLowerCase().includes(needle)) s = 1.5;
     else continue;
-    out.push({ f, s });
+    out.push({ kind: 'kec', f, s, label: p.district });
   }
-  return out.sort((a, b) => a.s - b.s || a.f.properties.village.localeCompare(b.f.properties.village)).slice(0, 8);
+
+  // Kelurahan, by name or code, falling back to their kecamatan's children.
+  for (const f of KEL) {
+    const p = f.properties;
+    const ns = score(p.village, needle);
+    let s;
+    if (ns >= 0) s = ns;
+    else if (String(p.village_code).toLowerCase().includes(needle)) s = 1.5;
+    else {
+      const ds = score(p.district, needle);
+      if (ds < 0) continue;
+      s = 6 + ds;
+    }
+    out.push({ kind: 'kel', f, s, label: p.village });
+  }
+
+  return out
+    .sort((a, b) => a.s - b.s
+      || (a.kind === b.kind ? 0 : a.kind === 'kec' ? -1 : 1)
+      || a.label.localeCompare(b.label))
+    .slice(0, 8);
 }
 
 function highlight(text, needle) {
   const i = text.toLowerCase().indexOf(needle);
-  if (i < 0 || needle.length < 2) return text;
+  if (i < 0 || needle.length < 2) return document.createTextNode(text);
   const frag = document.createDocumentFragment();
   frag.append(text.slice(0, i));
   const mark = document.createElement('mark');
@@ -252,37 +505,38 @@ function highlight(text, needle) {
   return frag;
 }
 
-function renderResults(qRaw) {
-  const hits = rank(qRaw);
+function renderResults(raw) {
+  const hits = rank(raw);
   state.active = hits.length ? 0 : -1;
   results.innerHTML = '';
 
-  if (!qRaw.trim()) { hideResults(); return; }
+  if (!raw.trim()) { hideResults(); return; }
   if (!hits.length) {
     const li = document.createElement('li');
     li.className = 'empty';
-    li.textContent = `Tidak ditemukan “${qRaw.trim()}”`;
+    li.textContent = `Tidak ditemukan “${raw.trim()}”`;
     results.append(li);
   } else {
-    const needle = qRaw.trim().toLowerCase();
-    hits.forEach(({ f }, i) => {
-      const p = f.properties;
+    const needle = raw.trim().toLowerCase();
+    hits.forEach((h, i) => {
+      const p = h.f.properties;
+      const isKec = h.kind === 'kec';
       const li = document.createElement('li');
-      li.role = 'option';
+      li.setAttribute('role', 'option');
       li.id = 'res-' + i;
       li.setAttribute('aria-selected', i === 0 ? 'true' : 'false');
-      li.dataset.name = p.village;
+      if (isKec) li.classList.add('is-district');
 
       const name = document.createElement('span');
       name.className = 'r-name';
-      name.append(highlight(p.village, needle));
+      name.append(highlight(h.label, needle));
 
       const meta = document.createElement('span');
       meta.className = 'r-meta';
-      meta.textContent = p.district;
+      meta.textContent = isKec ? 'kecamatan' : p.district;
 
       li.append(name, meta);
-      li.addEventListener('click', () => choose(f));
+      li.addEventListener('click', () => choose(h));
       li.addEventListener('pointerenter', () => setActive(i));
       results.append(li);
     });
@@ -302,8 +556,9 @@ function setActive(i) {
   q.setAttribute('aria-activedescendant', el.id);
 }
 
-function choose(f) {
-  select(f.properties.village);
+function choose(h) {
+  if (h.kind === 'kec') selectDistrict(h.f.properties.district);
+  else selectVillage(h.f.properties.village);
   hideResults();
   q.blur();
 }
@@ -323,19 +578,21 @@ q.addEventListener('input', () => {
 
 q.addEventListener('keydown', e => {
   if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-    const items = [...results.querySelectorAll('li[role="option"]')];
-    if (!items.length) return;
+    if (!results.querySelectorAll('li[role="option"]').length) return;
     e.preventDefault();
     setActive(state.active + (e.key === 'ArrowDown' ? 1 : -1));
   } else if (e.key === 'Enter') {
     const items = [...results.querySelectorAll('li[role="option"]')];
-    const active = items[state.active];
-    if (active) {
+    if (items[state.active]) {
       e.preventDefault();
-      choose(BY_NAME.get(active.dataset.name));
+      // Re-rank rather than reading data off the DOM: the list is rendered
+      // from the same ranking, but this stays correct if rendering ever
+      // filters or reorders.
+      const h = rank(q.value)[state.active];
+      if (h) choose(h);
     }
   } else if (e.key === 'Escape') {
-    if (!results.hidden) { hideResults(); }
+    if (!results.hidden) hideResults();
     else { q.value = ''; clearBtn.hidden = true; }
   }
 });
@@ -351,6 +608,8 @@ document.addEventListener('click', e => {
   if (!e.target.closest('.search')) hideResults();
 });
 
+backBtn.addEventListener('click', () => goCity());
+
 /* ---------- theme ---------- */
 const themeBtn = document.getElementById('theme');
 
@@ -364,31 +623,29 @@ function applyTheme(next) {
 }
 
 /**
- * setStyle() discards every custom source and layer, so the boundary overlay
- * must be re-created.
+ * setStyle() discards every custom source and layer, so both levels must be
+ * re-created.
  *
  * Instrumented findings on this app (MapLibre 5.6):
  *  - `load` does NOT re-fire on a setStyle() swap.
  *  - `styledata` fires exactly ONCE, while isStyleLoaded() is still false.
- *  - `idle` fires once the style and tiles settle, but only if the map is left
- *    alone; swapping again before it settles drops the event entirely. That is
- *    why a rapid light->dark->light sequence lost the overlay on the dark leg.
+ *  - `idle` fires only if the map is left alone; swapping again before it
+ *    settles drops the event entirely — that is why a fast toggle sequence
+ *    lost the overlay.
  *
- * So: hook the events AND poll until the style is loaded. The poll is the part
- * that actually makes this reliable; the listeners just make it fast.
+ * So hook the events AND poll until the style is loaded. Do NOT guard this with
+ * `if (map.getLayer(...)) return`: setStyle() does not tear layers down
+ * synchronously — they survive into the next tick — so that guard bails out
+ * before the swap has even started and the overlay silently disappears.
  */
 function restoreLayers() {
   mapReady = false;
 
   const tryAdd = () => {
-    // Do NOT guard on "layer already exists". setStyle() does not tear down
-    // custom layers synchronously — they survive into the next tick — so a
-    // `if (map.getLayer(...)) return` guard bails out before the swap has even
-    // started and the overlay is never restored. Wait for the style to report
-    // loaded, then add if absent.
     if (!map.isStyleLoaded()) return;
-    if (!map.getLayer('kel-fill')) addLayers();
-    if (state.selected) select(state.selected, { zoom: false });
+    if (!map.getLayer('kec-fill')) addLayers();
+    else paint();
+    renderCard();  // re-render without moving the camera
     stop();
   };
 
@@ -402,8 +659,7 @@ function restoreLayers() {
   map.on('styledata', tryAdd);
 
   const poll = setInterval(tryAdd, 200);
-  // Hard ceiling so a failed swap cannot leave a timer running forever.
-  setTimeout(stop, 15000);
+  setTimeout(stop, 15000); // hard ceiling; a failed swap must not leak a timer
 }
 
 themeBtn.addEventListener('click', () => {
@@ -411,9 +667,7 @@ themeBtn.addEventListener('click', () => {
   restoreLayers();
 });
 
-document.documentElement.dataset.theme = state.theme;
-
-/* ---------- geolocation: "which kelurahan am I in?" ---------- */
+/* ---------- geolocation: "which area am I in?" ---------- */
 const geoNote = document.getElementById('geo-note');
 const geoText = document.getElementById('geo-text');
 
@@ -443,14 +697,34 @@ function locate() {
 
 function showGeo(pos) {
   const pt = [pos.coords.longitude, pos.coords.latitude];
-  const hits = map.queryRenderedFeatures(pt, { layers: ['kel-fill'] });
-  if (!hits.length) {
-    geoText.innerHTML = 'Lokasi ini <b>di luar Kota Depok</b>.';
+  const drilled = state.view === 'kecamatan';
+
+  // Check the visible level first, then fall back: a point near a shared
+  // kelurahan/kecamatan edge can miss the child polygon while still sitting
+  // inside the parent, and a dead end there would be a silent failure.
+  const hits = map.queryRenderedFeatures(pt, { layers: [drilled ? 'kel-fill' : 'kec-fill'] });
+  if (hits.length) {
+    const p = hits[0].properties;
+    if (drilled) {
+      geoText.innerHTML = `Anda berada di <b>Kelurahan ${esc(p.village)}</b>, Kec. ${esc(p.district)}.`;
+      selectVillage(p.village, { zoom: false });
+    } else {
+      geoText.innerHTML = `Anda berada di <b>Kecamatan ${esc(p.district)}</b>.`;
+      openDistrict(p.district_code, { zoom: false });
+    }
     return;
   }
-  const p = hits[0].properties;
-  geoText.innerHTML = `Anda berada di <b>Kelurahan ${esc(p.village)}</b>, Kec. ${esc(p.district)}.`;
-  select(p.village, { zoom: false });
+
+  if (drilled) {
+    const kec = map.queryRenderedFeatures(pt, { layers: ['kec-fill'] });
+    if (kec.length) {
+      const p = kec[0].properties;
+      geoText.innerHTML = `Di dalam <b>Kecamatan ${esc(p.district)}</b>.`;
+      selectDistrict(p.district, { zoom: false });
+      return;
+    }
+  }
+  geoText.innerHTML = 'Lokasi ini <b>di luar Kota Depok</b>.';
 }
 
 function esc(s) {
@@ -460,10 +734,20 @@ function esc(s) {
 }
 
 /* ---------- boot ---------- */
-const fromHash = decodeURIComponent(location.hash.slice(1));
-if (fromHash) {
-  const f = FEATURES.find(x => x.properties.village_code === fromHash || x.properties.village === fromHash);
-  if (f) select(f.properties.village);
+document.documentElement.dataset.theme = state.theme;
+renderCard();
+renderBack();
+
+const hash = decodeURIComponent(location.hash.slice(1));
+if (hash) {
+  if (hash.startsWith('kec/')) {
+    openDistrict(hash.slice(4), { zoom: false });
+  } else {
+    const f = KEL.find(x => x.properties.village_code === hash || x.properties.village === hash);
+    if (f) selectVillage(f.properties.village, { zoom: false });
+  }
 }
 
-window.__depok = { map, state, select, rank, FEATURES, applyTheme };
+window.__depok = {
+  map, state, KEL, KEC, rank, goCity, openDistrict, selectVillage, selectDistrict, applyTheme,
+};

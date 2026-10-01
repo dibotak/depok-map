@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>depok-map — peta wilayah Kota Depok</title>
-<meta name="description" content="Peta interaktif 63 kelurahan di 11 kecamatan Kota Depok, Jawa Barat. Cari kelurahan, lihat Administrative hierarchy lengkap, dan salin kode BPS.">
+<meta name="description" content="Peta interaktif Kota Depok: pilih kecamatan untuk melihat kelurahan di dalamnya. 63 kelurahan dalam 11 kecamatan, lengkap dengan administrative hierarchy dan kode BPS.">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#f7f6f3">
 <link rel="stylesheet" href="/vendor/maplibre-gl.css">
@@ -23,7 +23,7 @@
       <circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/>
     </svg>
     <input id="q" type="search" autocomplete="off" spellcheck="false"
-           placeholder="Cari kelurahan atau kecamatan…"
+           placeholder="Cari kecamatan atau kelurahan…"
            aria-label="Cari kelurahan atau kecamatan di Kota Depok"
            aria-expanded="false" aria-controls="results" role="combobox"
            aria-autocomplete="list">
@@ -42,22 +42,25 @@
       </svg>
     </button>
   </div>
-  <p class="search-meta" id="search-meta">63 kelurahan · 11 kecamatan · Kota Depok</p>
+  <p class="search-meta" id="search-meta">11 kecamatan · 63 kelurahan · Kota Depok</p>
   <ul class="results" id="results" role="listbox" aria-label="Hasil pencarian" hidden></ul>
 </div>
 
-<!-- answer card ------------------------------------------------------- -->
-<div class="card placeholder" id="card">
-  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-    <path d="M12 21s-7-5.6-7-11a7 7 0 1 1 14 0c0 5.4-7 11-7 11z"/><circle cx="12" cy="10" r="2.3"/>
+<!-- back ------------------------------------------------------------- -->
+<button id="back" class="back" type="button" hidden>
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true">
+    <path d="M15 5l-7 7 7 7"/>
   </svg>
-  <p>Cari atau klik peta untuk tahu wilayah</p>
-</div>
+  <span></span>
+</button>
+
+<!-- answer card ------------------------------------------------------- -->
+<div class="card" id="card"></div>
 
 <!-- legend ------------------------------------------------------------ -->
 <div class="legend" id="legend" hidden>
   <span><i class="sw sel"></i>Terpilih</span>
-  <span><i class="sw same"></i>Kecamatan sama</span>
+  <span><i class="sw same"></i>Kecamatan terbuka</span>
 </div>
 
 <!-- map controls (maplibre) -->
