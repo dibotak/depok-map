@@ -19,7 +19,23 @@ const KEL = DATA.features;
 const KEC = DATA.districts;
 const META = DATA.meta;
 
-const KEL_BY_NAME = new Map(KEL.map(f => [f.properties.village, f]));
+// Keyed by CODE, never by name.
+//
+// Names are not unique: "Curug" is a kelurahan in both Bojongsari and
+// Cimanggis, and 7 names (Beji, Cilodong, Cinere, Cipayung, Limo, Pancoran
+// Mas, Tapos) are a kelurahan AND a kecamatan of the same name. A Map keyed
+// by name silently keeps only the last duplicate, so selecting the Curug in
+// Bojongsari highlighted the Curug in Cimanggis. village_code and
+// district_code are both unique across their level, so they are the only safe
+// keys. `KEL_BY_NAME` is kept solely for search-result labels, and reads the
+// full list so duplicates can be shown separately.
+const KEL_BY_CODE = new Map(KEL.map(f => [f.properties.village_code, f]));
+const KEL_BY_NAME = new Map();
+for (const f of KEL) {
+  const n = f.properties.village;
+  if (!KEL_BY_NAME.has(n)) KEL_BY_NAME.set(n, []);
+  KEL_BY_NAME.get(n).push(f);
+}
 const KEC_BY_NAME = new Map(KEC.map(f => [f.properties.district, f]));
 const KEC_BY_CODE = new Map(KEC.map(f => [f.properties.district_code, f]));
 
@@ -79,6 +95,28 @@ let mapReady = false;
  * as noise rather than hierarchy. At kecamatan view the kecamatan outline
  * stays as a thin frame while its children carry the fill.
  */
+/**
+ * Suppress the basemap's own sub-area labels.
+ *
+ * OpenFreeMap's style carries an `label_village` layer that rendered 56
+ * sub-area names at city zoom — OSM village/neighbourhood POIs, not our
+ * administrative data. Visually they read as "here are the kelurahan" when
+ * they are not, and they contradict the drill-down (a name may be labelled
+ * where the map has no boundary for it). We own labelling at both levels, so
+ * they are hidden while drilled out.
+ *
+ * The layer id is basemap-specific: hide whatever exists, don't assume a name.
+ */
+const BASEMAP_LABEL_LAYERS = ['label_village', 'place_labels', 'place_subdivision'];
+
+function setForeignLabels(on) {
+  for (const id of BASEMAP_LABEL_LAYERS) {
+    if (map.getLayer(id)) {
+      map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
+    }
+  }
+}
+
 function paint() {
   if (!mapReady) return;
   const p = PALETTE[state.theme];
@@ -93,9 +131,11 @@ function paint() {
     map.setLayoutProperty('kel-fill', 'visibility', 'none');
     map.setLayoutProperty('kel-line', 'visibility', 'none');
     map.setLayoutProperty('kel-label', 'visibility', 'none');
+    setForeignLabels(false);
     return;
   }
 
+  setForeignLabels(false);
   map.setLayoutProperty('kel-fill', 'visibility', 'visible');
   map.setLayoutProperty('kel-line', 'visibility', 'visible');
 
@@ -106,7 +146,9 @@ function paint() {
   map.setPaintProperty('kel-label', 'text-color', p.ink);
   map.setPaintProperty('kel-label', 'text-halo-color', p.halo);
 
-  const isSel = ['==', ['get', 'village'], state.village];
+  // Compare on village_code, not village: two kelurahan share the name
+  // "Curug", so a name comparison would highlight both at once.
+  const isSel = ['==', ['get', 'village_code'], state.village];
   const isOpen = ['==', ['get', 'district_code'], state.district];
 
   // Selected kelurahan solid, the rest of the open kecamatan lightly tinted,
@@ -230,7 +272,7 @@ map.on('click', 'kec-fill', e => {
 map.on('click', 'kel-fill', e => {
   if (state.view !== 'kecamatan') return;
   const f = e.features && e.features[0];
-  if (f) selectVillage(f.properties.village);
+  if (f) selectVillage(f.properties.village_code);
 });
 
 for (const layer of ['kec-fill', 'kel-fill']) {
@@ -287,10 +329,11 @@ function openDistrict(code, opts = {}) {
   history.replaceState(null, '', '#kec/' + encodeURIComponent(code));
 }
 
-function selectVillage(name, opts = {}) {
-  const f = KEL_BY_NAME.get(name);
+/** Selects a kelurahan by village_code. Names are ambiguous (see KEL_BY_CODE). */
+function selectVillage(code, opts = {}) {
+  const f = KEL_BY_CODE.get(code);
   if (!f) return;
-  state.village = name;
+  state.village = code;
   // Selecting a kelurahan from search must also open its kecamatan, otherwise
   // the highlight would land on a hidden layer.
   state.district = f.properties.district_code;
@@ -348,7 +391,7 @@ function renderCard(kecOverride) {
   const kp = kec.properties;
 
   const kids = KEL.filter(f => f.properties.district_code === kp.district_code);
-  const sel = state.village ? KEL_BY_NAME.get(state.village) : null;
+  const sel = state.village ? KEL_BY_CODE.get(state.village) : null;
   const sp = sel ? sel.properties : null;
 
   card.className = 'card';
@@ -487,9 +530,14 @@ function rank(raw) {
     out.push({ kind: 'kel', f, s, label: p.village });
   }
 
+  // District name is the final tiebreak so that two same-named kelurahan (the
+  // two "Curug" entries) always come back in a stable, readable order rather
+  // than whatever order the sort happened to leave them in.
+  const districtOf = h => h.f.properties.district;
   return out
     .sort((a, b) => a.s - b.s
       || (a.kind === b.kind ? 0 : a.kind === 'kec' ? -1 : 1)
+      || districtOf(a).localeCompare(districtOf(b))
       || a.label.localeCompare(b.label))
     .slice(0, 8);
 }
@@ -535,6 +583,12 @@ function renderResults(raw) {
       meta.className = 'r-meta';
       meta.textContent = isKec ? 'kecamatan' : p.district;
 
+      // "Curug" exists in both Bojongsari and Cimanggis. Without the
+      // kecamatan in the row, both results read as identical and the user
+      // cannot tell which one they are about to open.
+      const dup = !isKec && (KEL_BY_NAME.get(h.label) || []).length > 1;
+      if (dup) li.classList.add('is-dup');
+
       li.append(name, meta);
       li.addEventListener('click', () => choose(h));
       li.addEventListener('pointerenter', () => setActive(i));
@@ -558,7 +612,7 @@ function setActive(i) {
 
 function choose(h) {
   if (h.kind === 'kec') selectDistrict(h.f.properties.district);
-  else selectVillage(h.f.properties.village);
+  else selectVillage(h.f.properties.village_code);
   hideResults();
   q.blur();
 }
@@ -707,7 +761,7 @@ function showGeo(pos) {
     const p = hits[0].properties;
     if (drilled) {
       geoText.innerHTML = `Anda berada di <b>Kelurahan ${esc(p.village)}</b>, Kec. ${esc(p.district)}.`;
-      selectVillage(p.village, { zoom: false });
+      selectVillage(p.village_code, { zoom: false });
     } else {
       geoText.innerHTML = `Anda berada di <b>Kecamatan ${esc(p.district)}</b>.`;
       openDistrict(p.district_code, { zoom: false });
@@ -742,9 +796,14 @@ const hash = decodeURIComponent(location.hash.slice(1));
 if (hash) {
   if (hash.startsWith('kec/')) {
     openDistrict(hash.slice(4), { zoom: false });
+  } else if (KEL_BY_CODE.has(hash)) {
+    selectVillage(hash, { zoom: false });
   } else {
-    const f = KEL.find(x => x.properties.village_code === hash || x.properties.village === hash);
-    if (f) selectVillage(f.properties.village, { zoom: false });
+    // Tolerate a name in the hash for hand-typed links, but only when it is
+    // unambiguous — guessing between two "Curug" entries would silently open
+    // the wrong one.
+    const matches = KEL_BY_NAME.get(hash) || [];
+    if (matches.length === 1) selectVillage(matches[0].properties.village_code, { zoom: false });
   }
 }
 

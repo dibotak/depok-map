@@ -161,6 +161,9 @@ body {
 .results li[aria-selected="true"] { box-shadow: inset 2px 0 0 var(--accent); }
 .results .r-name { font-weight: 520; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .results li.is-district .r-name { font-weight: 640; }
+/* Two kelurahan share a name ("Curug"). Their rows would look identical, so
+   the kecamatan is emphasised — that is the only thing distinguishing them. */
+.results li.is-dup .r-meta { color: var(--ink-2); font-weight: 600; }
 .results .r-meta { font-size: 11.5px; color: var(--faint); flex: none; font-variant-numeric: tabular-nums; }
 .results mark { background: var(--accent-soft); color: inherit; border-radius: 3px; padding: 0 2px; font-weight: 650; }
 .results .empty { color: var(--muted); cursor: default; justify-content: center; }
