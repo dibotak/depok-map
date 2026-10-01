@@ -102,21 +102,29 @@ let mapReady = false;
  */
 
 /**
- * Suppress the basemap's own sub-area labels.
+ * Suppress the basemap's own sub-area geometry and labels.
  *
- * OpenFreeMap's style carries an `label_village` layer that rendered 56
- * sub-area names at city zoom — OSM village/neighbourhood POIs, not our
- * administrative data. Visually they read as "here are the kelurahan" when
- * they are not, and they contradict the drill-down (a name may be labelled
- * where the map has no boundary for it). We own labelling at both levels, so
- * they are hidden while drilled out.
+ * Two separate leaks, both fixed at city and district level:
  *
- * The layer id is basemap-specific: hide whatever exists, don't assume a name.
+ * 1. Labels. OpenFreeMap's `label_village` layer rendered 56 OSM village and
+ *    neighbourhood names at city zoom. They read as "these are the kelurahan"
+ *    when they are not, and they contradicted the drill-down.
+ *
+ * 2. `boundary_3`. The basemap draws its own administrative boundary lines
+ *    (admin_level 3-4). Six of them rendered across Bojongsari, subdividing
+ *    our seven kelurahan into shapes that do not match them — producing
+ *    phantom areas with no name, and lines implying a hierarchy we do not
+ *    publish. "Pancora" and a second "Sawangan" in that view are basemap
+ *    features, not data errors: neither exists in the dataset.
+ *
+ * We own both geometry and labelling, so both are hidden. The layer id is
+ * basemap-specific: hide whatever exists, don't assume a name.
  */
 const BASEMAP_LABEL_LAYERS = ['label_village', 'place_labels', 'place_subdivision'];
+const BASEMAP_ADMIN_LAYERS = ['boundary_3', 'boundary_2', 'boundary_4', 'boundary'];
 
-function setForeignLabels(on) {
-  for (const id of BASEMAP_LABEL_LAYERS) {
+function setForeignLayers(on) {
+  for (const id of BASEMAP_LABEL_LAYERS.concat(BASEMAP_ADMIN_LAYERS)) {
     if (map.getLayer(id)) {
       map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
     }
@@ -141,11 +149,11 @@ function paint() {
     map.setLayoutProperty('kel-fill', 'visibility', 'none');
     map.setLayoutProperty('kel-line', 'visibility', 'none');
     map.setLayoutProperty('kel-label', 'visibility', 'none');
-    setForeignLabels(false);
+    setForeignLayers(false);
     return;
   }
 
-  setForeignLabels(false);
+  setForeignLayers(false);
 
   // Only the open kecamatan's children exist on screen. Filtering the source
   // down (rather than dimming it) is what keeps the other 10 kecamatan reading
@@ -753,18 +761,37 @@ function applyTheme(next) {
  *    settles drops the event entirely — that is why a fast toggle sequence
  *    lost the overlay.
  *
- * So hook the events AND poll until the style is loaded. Do NOT guard this with
- * `if (map.getLayer(...)) return`: setStyle() does not tear layers down
- * synchronously — they survive into the next tick — so that guard bails out
- * before the swap has even started and the overlay silently disappears.
+ * So hook the events AND poll until the overlay is back. Three traps, all hit
+ * on this app:
+ *
+ *  1. Do NOT branch on `map.getLayer('kec-fill')` to decide whether to
+ *     re-create. setStyle() does not tear layers down synchronously — they
+ *     survive into the next tick — so that check passes while the overlay is
+ *     still the *old* one, and the swap silently never happens.
+ *
+ *  2. Do NOT route the "already there" case to paint(). restoreLayers() sets
+ *     mapReady = false up front, and paint() bails on `if (!mapReady)`, so
+ *     paint() would be a no-op — and the stop() that follows would cancel the
+ *     poll, leaving no way back. The symptom was a blank overlay after a
+ *     theme toggle that never recovered.
+ *
+ *  3. Do NOT gate on map.isStyleLoaded(). It is not a reliable "the swap is
+ *     done" signal: on a throttled or backgrounded tab it can stay false long
+ *     after the style is usable, and then nothing is ever re-added. addLayers()
+ *     is idempotent, so it is safe to simply call it — and it is the only
+ *     thing that can tell us whether the overlay exists.
  */
 function restoreLayers() {
   mapReady = false;
 
   const tryAdd = () => {
-    if (!map.isStyleLoaded()) return;
-    if (!map.getLayer('kec-fill')) addLayers();
-    else paint();
+    // addLayers() must not abort on a style that is still settling, or the
+    // poll would stop before it ever succeeds.
+    try {
+      addLayers();
+    } catch (e) {
+      return; // not ready yet; the poll tries again
+    }
     renderCard();  // re-render without moving the camera
     stop();
   };
