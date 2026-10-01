@@ -46,6 +46,42 @@
   <ul class="results" id="results" role="listbox" aria-label="Hasil pencarian" hidden></ul>
 </div>
 
+<!-- sidebar ------------------------------------------------------------ -->
+<button id="side-toggle" class="side-toggle" type="button" aria-expanded="false"
+        aria-controls="sidebar" aria-label="Buka daftar wilayah dan jalan">
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
+    <path d="M4 6h16M4 12h16M4 18h10"/>
+  </svg>
+  <span>Daftar</span>
+</button>
+
+<aside class="sidebar" id="sidebar" aria-label="Daftar wilayah dan jalan">
+  <div class="side-head">
+    <div class="side-tabs" role="tablist">
+      <button class="side-tab is-on" id="tab-area" role="tab" aria-selected="true"
+              aria-controls="panel-area" type="button">Wilayah</button>
+      <button class="side-tab" id="tab-road" role="tab" aria-selected="false"
+              aria-controls="panel-road" type="button">Jalan</button>
+    </div>
+    <button class="side-close" id="side-close" type="button" aria-label="Tutup daftar">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
+        <path d="M18 6L6 18M6 6l12 12"/>
+      </svg>
+    </button>
+  </div>
+
+  <!-- areas -->
+  <div class="side-panel" id="panel-area" role="tabpanel" aria-labelledby="tab-area">
+    <div class="side-scroll" id="area-list"></div>
+  </div>
+
+  <!-- roads -->
+  <div class="side-panel" id="panel-road" role="tabpanel" aria-labelledby="tab-road" hidden>
+    <p class="side-note" id="road-note"></p>
+    <div id="road-groups"></div>
+  </div>
+</aside>
+
 <!-- back ------------------------------------------------------------- -->
 <button id="back" class="back" type="button" hidden>
   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true">
@@ -77,6 +113,7 @@
 
 <script src="/vendor/maplibre-gl.js"></script>
 <script src="/src/data.js"></script>
+<script src="/src/roads.js"></script>
 <script src="/src/app.js"></script>
 </body>
 </html>

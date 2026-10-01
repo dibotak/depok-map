@@ -340,6 +340,7 @@ function goCity(opts = {}) {
   paint();
   renderCard();
   renderBack();
+  renderAreaList();
   if (opts.zoom !== false) {
     map.fitBounds(boundsOfCoords([META.bounds]), {
       padding: { top: 100, bottom: 200, left: 56, right: 56 }, duration: 700,
@@ -357,6 +358,7 @@ function openDistrict(code, opts = {}) {
   paint();
   renderCard(kec);
   renderBack();
+  renderAreaList();
   if (opts.zoom !== false) {
     map.fitBounds(boundsOf(kec), { padding: VIEW_PADDING, maxZoom: 14.5, duration: 700 });
   }
@@ -375,6 +377,7 @@ function selectVillage(code, opts = {}) {
   paint();
   renderCard();
   renderBack();
+  renderAreaList();
   if (opts.zoom !== false) {
     map.fitBounds(boundsOf(f), {
       padding: { top: 120, bottom: 250, left: 70, right: 70 }, maxZoom: 15.5, duration: 700,
@@ -884,10 +887,163 @@ function esc(s) {
   return d.innerHTML;
 }
 
+/* ---------- sidebar ---------- */
+const sideEl = document.getElementById('sidebar');
+const sideToggle = document.getElementById('side-toggle');
+const sideClose = document.getElementById('side-close');
+const tabArea = document.getElementById('tab-area');
+const tabRoad = document.getElementById('tab-road');
+const panelArea = document.getElementById('panel-area');
+const panelRoad = document.getElementById('panel-road');
+const areaList = document.getElementById('area-list');
+const roadGroups = document.getElementById('road-groups');
+const roadNote = document.getElementById('road-note');
+
+function setSidebar(open) {
+  sideEl.hidden = !open;
+  sideToggle.setAttribute('aria-expanded', String(open));
+  document.body.classList.toggle('side-open', open);
+  if (open) map.resize();
+}
+
+sideToggle.addEventListener('click', () => setSidebar(true));
+sideClose.addEventListener('click', () => setSidebar(false));
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !sideEl.hidden) setSidebar(false);
+});
+
+function setTab(which) {
+  const road = which === 'road';
+  tabArea.classList.toggle('is-on', !road);
+  tabRoad.classList.toggle('is-on', road);
+  tabArea.setAttribute('aria-selected', String(!road));
+  tabRoad.setAttribute('aria-selected', String(road));
+  panelArea.hidden = road;
+  panelRoad.hidden = !road;
+}
+tabArea.addEventListener('click', () => setTab('area'));
+tabRoad.addEventListener('click', () => setTab('road'));
+
+/** Area list: 11 kecamatan, then their kelurahan once one is open. */
+function renderAreaList() {
+  const kids = state.district
+    ? KEL.filter(f => f.properties.district_code === state.district)
+        .sort((a, b) => a.properties.village.localeCompare(b.properties.village, 'id'))
+    : [];
+  const openKec = state.district ? KEC_BY_CODE.get(state.district) : null;
+
+  let html = '';
+  html += `<div class="side-group">11 Kecamatan</div>`;
+  for (const f of KEC.slice().sort((a, b) =>
+    a.properties.district.localeCompare(b.properties.district, 'id'))) {
+    const code = f.properties.district_code;
+    const n = KEL.filter(k => k.properties.district_code === code).length;
+    html += `<button class="side-row${code === state.district ? ' is-on' : ''}" type="button"
+      data-code="${esc(code)}" data-kind="kec">
+      <span class="sr-name">${esc(f.properties.district)}</span>
+      <span class="sr-meta">${n}</span></button>`;
+  }
+
+  if (openKec) {
+    html += `<div class="side-group">Kelurahan · ${esc(openKec.properties.district)}</div>`;
+    if (!kids.length) {
+      html += `<p class="road-empty">Tidak ada kelurahan.</p>`;
+    }
+    for (const f of kids) {
+      const code = f.properties.village_code;
+      html += `<button class="side-row${code === state.village ? ' is-on' : ''}" type="button"
+        data-code="${esc(code)}" data-kind="kel">
+        <span class="sr-name">${esc(f.properties.village)}</span></button>`;
+    }
+  }
+
+  areaList.innerHTML = html;
+  for (const el of areaList.querySelectorAll('.side-row')) {
+    el.addEventListener('click', () => {
+      if (el.dataset.kind === 'kec') openDistrict(el.dataset.code);
+      else selectVillage(el.dataset.code);
+      // Below 760px the panel is full-width and covers the card, which holds the
+      // GPS button and the copyable BPS codes. Close it so the result is visible.
+      if (window.matchMedia('(max-width: 760px)').matches) setSidebar(false);
+    });
+  }
+}
+
+/* ---------- roads ---------- */
+const ROADS = window.DEPOK_ROADS || { classes: [] };
+// Which road classes are highlighted. Empty = show none; the basemap always draws.
+const activeRoadClasses = new Set();
+let selectedRoad = null;
+
+function roadKey(r) {
+  return `${r.name}||${r.ref}`;
+}
+
+function renderRoads() {
+  if (!ROADS.classes.length) {
+    roadGroups.innerHTML = `<p class="road-empty">Data jalan tidak tersedia.</p>`;
+    return;
+  }
+  roadNote.innerHTML =
+    `Kelas jalan <b>${esc(ROADS.statute)}</b> — diinferensikan dari atribut OSM, `
+    + `bukan tag resmi. OSM tidak menyimpan kewenangan pengelola jalan. `
+    + `Kelas II, IV, V tidak ditampilkan karena tidak dapat dibedakan.`;
+
+  let html = '';
+  for (const c of ROADS.classes) {
+    const key = `k${c.kelas}`;
+    const open = activeRoadClasses.has(key);
+    html += `<div class="road-group${open ? ' is-open' : ''}" data-key="${key}">
+      <button class="road-head" type="button" role="button" aria-expanded="${open}">
+        <span class="road-chev">▶</span>
+        <span class="road-title">Kelas ${esc(c.kelas)} · ${esc(c.name)}</span>
+        <span class="road-basis" data-conf="${esc(c.confidence)}">${esc(c.basis)}</span>
+        <span class="road-count">${c.count}</span>
+      </button>
+      <div class="road-body">`;
+    if (!c.roads.length) {
+      html += `<p class="road-empty">Tidak ada jalan.</p>`;
+    }
+    for (const r of c.roads) {
+      const k = roadKey(r);
+      html += `<button class="road-row${selectedRoad === k ? ' is-on' : ''}" type="button"
+        data-key="${esc(k)}" data-name="${esc(r.name)}">
+        <span class="rr-name">${esc(r.name)}</span>
+        <span class="rr-badge">${esc(r.osm_label)}</span>
+        ${r.ref ? `<span class="rr-ref">${esc(r.ref)}</span>` : ''}
+      </button>`;
+    }
+    html += `</div></div>`;
+  }
+  roadGroups.innerHTML = html;
+
+  for (const head of roadGroups.querySelectorAll('.road-head')) {
+    head.addEventListener('click', () => {
+      const g = head.closest('.road-group');
+      const key = g.dataset.key;
+      const nowOpen = !g.classList.contains('is-open');
+      g.classList.toggle('is-open', nowOpen);
+      head.setAttribute('aria-expanded', String(nowOpen));
+      if (nowOpen) activeRoadClasses.add(key);
+      else activeRoadClasses.delete(key);
+    });
+  }
+  for (const row of roadGroups.querySelectorAll('.road-row')) {
+    row.addEventListener('click', () => {
+      selectedRoad = selectedRoad === row.dataset.key ? null : row.dataset.key;
+      renderRoads();
+      if (window.matchMedia('(max-width: 760px)').matches) setSidebar(false);
+    });
+  }
+}
+
 /* ---------- boot ---------- */
 document.documentElement.dataset.theme = state.theme;
 renderCard();
 renderBack();
+renderAreaList();
+renderRoads();
+sideEl.hidden = true;
 
 const hash = decodeURIComponent(location.hash.slice(1));
 if (hash) {
@@ -906,4 +1062,5 @@ if (hash) {
 
 window.__depok = {
   map, state, KEL, KEC, rank, goCity, openDistrict, selectVillage, selectDistrict, applyTheme,
+  setSidebar, setTab, renderAreaList, renderRoads, ROADS,
 };

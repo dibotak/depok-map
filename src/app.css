@@ -252,7 +252,191 @@ body {
 .copy:hover { color: var(--ink); border-color: var(--ink-2); }
 .copy.done { color: var(--accent); border-color: var(--accent); }
 
-/* ---------- back button ---------- */
+/* ---------- sidebar ---------- */
+/* The sidebar is a full-height column on the left. It displaces the search box
+   and the answer card rather than overlapping them: both are also left-anchored,
+   and overlaying them would hide the card the moment a kecamatan is opened. The
+   map is padded to match via VIEW_PADDING.left so nothing sits under the panel. */
+.sidebar {
+  position: absolute; z-index: 1100;
+  top: max(12px, env(safe-area-inset-top));
+  bottom: max(12px, env(safe-area-inset-bottom));
+  left: max(12px, env(safe-area-inset-left));
+  width: min(316px, calc(100vw - 24px));
+  display: flex; flex-direction: column;
+  background: var(--surface);
+  -webkit-backdrop-filter: saturate(180%) blur(14px);
+  backdrop-filter: saturate(180%) blur(14px);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-2);
+  overflow: hidden;
+  /* Collapsed by default; JS flips [hidden] off. Kept out of the a11y tree while
+     closed so tab order does not walk a panel nobody can see. */
+}
+.sidebar[hidden] { display: none; }
+
+.side-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 8px 8px 10px;
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+.side-tabs { display: flex; gap: 4px; flex: 1; min-width: 0; }
+.side-tab {
+  flex: 1; height: 30px; padding: 0 8px;
+  font: inherit; font-size: 12.5px; font-weight: 580; color: var(--muted);
+  background: transparent; border: 1px solid transparent; border-radius: 7px;
+  cursor: pointer;
+  transition: color var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+.side-tab:hover { color: var(--ink-2); }
+.side-tab.is-on {
+  color: var(--ink); background: var(--bg);
+  border-color: var(--border);
+}
+.side-close {
+  flex: none; width: 30px; height: 30px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--muted); background: transparent;
+  border: 1px solid transparent; border-radius: 7px; cursor: pointer;
+}
+.side-close:hover { color: var(--ink); border-color: var(--border); }
+
+.side-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.side-panel[hidden] { display: none; }
+.side-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+
+.side-note {
+  margin: 0; padding: 9px 13px;
+  font-size: 11.5px; line-height: 1.45; color: var(--muted);
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+.side-note b { color: var(--ink-2); font-weight: 600; }
+
+/* --- area rows --- */
+.side-group {
+  padding: 7px 13px 3px;
+  font-size: 10px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase;
+  color: var(--faint);
+}
+.side-row {
+  display: flex; align-items: center; gap: 9px; width: 100%;
+  padding: 7px 13px;
+  font: inherit; font-size: 13px; text-align: left;
+  color: var(--ink-2); background: transparent;
+  border: 0; border-left: 2px solid transparent;
+  cursor: pointer;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+.side-row:hover { background: var(--bg); color: var(--ink); }
+.side-row.is-on {
+  color: var(--ink); font-weight: 620;
+  background: var(--bg); border-left-color: var(--accent);
+}
+.side-row .sr-name {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.side-row .sr-meta {
+  flex: none; font-size: 11px; color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+.side-row.is-on .sr-meta { color: var(--accent); }
+
+/* --- road rows --- */
+.road-group { border-bottom: 1px solid var(--border); }
+.road-group:last-child { border-bottom: 0; }
+.road-head {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 9px 13px;
+  font: inherit; text-align: left;
+  color: var(--ink); background: var(--bg);
+  border: 0; cursor: pointer;
+}
+.road-head:hover { background: var(--bg-2, var(--bg)); }
+.road-chev {
+  flex: none; color: var(--faint); font-size: 10px; line-height: 1;
+  transition: transform var(--dur) var(--ease);
+}
+.road-group.is-open .road-chev { transform: rotate(90deg); }
+.road-title { flex: 1; min-width: 0; font-size: 12.5px; font-weight: 620; }
+.road-basis {
+  flex: none; font-size: 9.5px; font-weight: 700; letter-spacing: .05em;
+  text-transform: uppercase; padding: 2px 5px; border-radius: 4px;
+  color: var(--muted); border: 1px solid var(--border);
+}
+.road-basis[data-conf="high"] { color: var(--accent); border-color: var(--accent); }
+.road-count {
+  flex: none; font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums;
+}
+.road-body { display: none; }
+.road-group.is-open .road-body { display: block; }
+
+.road-row {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 6px 13px 6px 26px;
+  font: inherit; font-size: 12.5px; text-align: left;
+  color: var(--ink-2); background: transparent; border: 0; cursor: pointer;
+}
+.road-row:hover { background: var(--bg); color: var(--ink); }
+.road-row.is-on { color: var(--ink); font-weight: 620; background: var(--bg); }
+.road-row .rr-name {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.road-row .rr-badge {
+  flex: none; font-size: 9.5px; font-weight: 650; letter-spacing: .04em;
+  text-transform: uppercase; padding: 2px 5px; border-radius: 4px;
+  color: var(--muted); background: var(--bg); border: 1px solid var(--border);
+}
+.road-row .rr-ref {
+  flex: none; font-size: 10.5px; font-weight: 700; color: var(--accent);
+  font-variant-numeric: tabular-nums; min-width: 20px; text-align: right;
+}
+.road-empty { padding: 10px 13px 12px 26px; font-size: 12px; color: var(--faint); }
+
+/* --- toggle --- */
+.side-toggle {
+  position: absolute; z-index: 1050;
+  left: max(18px, env(safe-area-inset-left));
+  top: max(20px, env(safe-area-inset-top));
+  display: flex; align-items: center; gap: 7px;
+  height: 34px; padding: 0 13px 0 10px;
+  font: inherit; font-size: 13px; font-weight: 560; color: var(--ink-2);
+  background: var(--surface);
+  -webkit-backdrop-filter: saturate(180%) blur(14px);
+  backdrop-filter: saturate(180%) blur(14px);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  box-shadow: var(--shadow-1);
+  cursor: pointer;
+  transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.side-toggle:hover { color: var(--ink); border-color: var(--border-strong); }
+.side-toggle[hidden] { display: none; }
+
+/* Layout shift while the sidebar is open.
+   Only .back and .card move. The search box is centred with translateX(-50%),
+   so assigning it a `left` would shift its centre and skew it off-screen; it is
+   already clear of the panel at any width where both fit (>700px), and below
+   that the panel overlays the map anyway. The toggle is hidden rather than moved,
+   since the panel's own close button replaces it. */
+body.side-open .back,
+body.side-open .card {
+  left: calc(max(12px, env(safe-area-inset-left)) + min(316px, calc(100vw - 24px)) + 12px);
+}
+body.side-open .side-toggle { display: none; }
+
+@media (max-width: 760px) {
+  /* The panel is full-width and overlays the map, so there is nothing to sit
+     beside. The .card shift must be undone explicitly here: left-anchored rules
+     are inherited by the narrower block above, and without this the card is
+     pushed off the right edge and collapses to a few px wide. */
+  .sidebar { width: calc(100vw - 24px); }
+  body.side-open .card { left: max(12px, env(safe-area-inset-left)); }
+}
+
 .back {
   position: absolute; z-index: 950;
   left: max(18px, env(safe-area-inset-left));
@@ -274,6 +458,14 @@ body {
 }
 .back:hover { color: var(--ink); border-color: var(--border-strong); }
 .back[hidden] { display: none; }
+
+/* Closed state: the sidebar toggle owns the top-left corner, so the back button
+   starts to its right instead of underneath it (~92px wide + 14px gap). Above
+   760px the two sit side by side; below that the panel is full-width and the
+   back button drops below the search box as it already did. */
+@media (min-width: 761px) {
+  .back { left: max(120px, calc(env(safe-area-inset-left) + 120px)); }
+}
 
 @media (min-width: 1025px) {
   .back { top: max(20px, env(safe-area-inset-top)); }

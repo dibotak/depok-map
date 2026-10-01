@@ -36,12 +36,19 @@ Cloudflare Pages has no ignore file for Git-based deploys, so pruning has to
 happen in the build command. `rm -rf` is safe here because the whole repo is
 re-checked-out on every deploy — nothing is lost that git can't restore.
 
+`scripts/` is pruned, so `build-roads.py` and its Overpass dependency never
+touch the Pages build — `src/roads.js` is committed, exactly like `src/data.js`.
+
 A subdomain or apex domain both work. The asset paths are root-absolute
 (`/src/app.js`), so mounting this under a *subpath* like `example.com/depok-map/`
 would 404 every asset — use `map.dibotak.com`, not a subpath.
 
 ## What it does
 
+- **Sidebar with two tabs.** *Wilayah* lists all 11 kecamatan with their child
+  counts; opening one appends its kelurahan underneath, and the current
+  selection stays highlighted as you click through the map. *Jalan* lists 350
+  named roads grouped by class, collapsible. Collapsible panel, `Esc` to close.
 - **Drill down one level at a time.** City view shows the 11 kecamatan
   boundaries, each labelled, and no kelurahan at all. Click one to zoom in: that
   kecamatan's kelurahan appear and are labelled, while the other 10 stay plain
@@ -92,20 +99,56 @@ shots/                screenshots (gitignored)
 python3 scripts/build-data.py       # 63 kelurahan  -> public/data/
 python3 scripts/build-districts.py  # 11 kecamatan  -> public/data/
 python3 scripts/bundle-data.py      # both          -> src/data.js
+python3 scripts/build-roads.py      # 350 jalan     -> src/roads.js  (Overpass)
 ```
 
-All three pull from
+The first three pull from
 [JfrAziz/indonesia-district](https://github.com/JfrAziz/indonesia-district)
 (the split of HDX `cod-ab-idn`), round coordinates to 6 decimals, drop
 consecutive duplicate vertices, and **fail loudly** if any feature is missing
 its name or code — a nameless feature would render as an unclickable blank
 polygon and read as a broken map rather than a data bug.
 
-`build-districts.py` fetches the 11 published kecamatan polygons rather than
-dissolving the 63 kelurahan. A dissolve leaves slivers along shared borders and
-invents a boundary BPS never published. `bundle-data.py` then verifies the two
-levels agree — every `district_code` used by a kelurahan must exist in the
-kecamatan set, or the build fails.
+`build-districts.py` **dissolves** the 63 kelurahan per `district_code` with
+`shapely.ops.unary_union`. This is not cosmetic. The upstream per-kecamatan file
+contains one feature per *child kelurahan*, each carrying the district's own
+name, so collecting its parts without unioning produces a MultiPolygon that
+MapLibre strokes part-by-part — drawing all 63 child borders at city view. That
+read as a foreign-geometry bug and got misattributed to the basemap twice.
+Coordinates are rounded **after** the union, because rounding first separates
+shared edges by a rounding error and the union keeps the sliver instead of
+absorbing the seam.
+
+`bundle-data.py` then verifies the two levels agree — every `district_code` used
+by a kelurahan must exist in the kecamatan set, and each district must be a
+valid single-ring geometry — or the build fails. An undissolved build cannot
+ship.
+
+## Road classes are inferred, and the app says so
+
+`build-roads.py` pulls named arterial roads for Kota Depok from Overpass (ODbL)
+and groups them by **UU 22/2009 Pasal 25**, which classes roads by
+*administrative authority*: I Nasional, II Provinsi, III Kabupaten/Kota,
+IV Desa, V Lingkungan.
+
+**OSM does not record who maintains a road.** There is no authority tag in the
+schema, so this is not a lookup — any static table would be a guess dressed as
+data. The one reliable signal is `ref`: Indonesian national routes carry a bare
+integer route number, and a numbered national route is Jalan Nasional by
+definition. So `ref.isdigit()` → Kelas I, everything else → Kelas III.
+
+- **Kelas I** (17 roads, high confidence) — refs 2, 12, 17. Jalan Raya Bogor,
+  Jalan Tol DBA, RE Martadinata, and so on.
+- **Kelas III** (333 roads, low confidence) — everything else.
+
+**Kelas II, IV and V are not shown.** That is not a claim they are empty —
+nothing here proves their absence, we just cannot separate a provincial road from
+a city road without the tag. The UI states this rather than implying a survey.
+
+Perda Kota Depok No. 9 Tahun 2022 (RTRW 2022–2042) is cited as the governing
+spatial plan, but a Perda is a planning instrument: it does not tag OSM ways and
+its classification is not machine-readable from street data, so it is context,
+not a source of classes.
 
 ## Data
 
