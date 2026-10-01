@@ -16,6 +16,30 @@ python3 -m http.server 4400
 A server is required — the app loads its geometry via `<script src>`, which
 `file://` blocks.
 
+## Deploying to Cloudflare Pages
+
+Connect the repo in the Pages dashboard with:
+
+| Setting | Value |
+|---|---|
+| Framework preset | None |
+| Build command | `rm -rf public scripts` |
+| Build output directory | `/` |
+
+The build command prunes the two things the site never loads: `public/data/`
+(1.1 MB of source JSON for the build scripts) and `scripts/`. Neither is
+referenced by `index.html` or `app.js` — `src/data.js` is the only data the
+browser actually fetches, so pruning them is safe and leaves **~2.1 MB** to
+publish.
+
+Cloudflare Pages has no ignore file for Git-based deploys, so pruning has to
+happen in the build command. `rm -rf` is safe here because the whole repo is
+re-checked-out on every deploy — nothing is lost that git can't restore.
+
+A subdomain or apex domain both work. The asset paths are root-absolute
+(`/src/app.js`), so mounting this under a *subpath* like `example.com/depok-map/`
+would 404 every asset — use `map.dibotak.com`, not a subpath.
+
 ## What it does
 
 - **Drill down one level at a time.** City view highlights the whole city and
