@@ -90,11 +90,17 @@ let mapReady = false;
 /**
  * Repaint for the current view.
  *
- * At city view the 11 kecamatan carry the whole visual — the kelurahan overlay
- * is hidden outright, because drawing 63 sub-areas over 11 parent areas reads
- * as noise rather than hierarchy. At kecamatan view the kecamatan outline
- * stays as a thin frame while its children carry the fill.
+ * One level of detail is on screen at a time:
+ *   city      11 kecamatan outlines, no kelurahan at all
+ *   kecamatan the open one's kelurahan; every other kecamatan stays a plain
+ *             polygon, so you keep the city's shape as context
+ *   kelurahan one child solid, its siblings tinted
+ *
+ * The rule is a filter on the kelurahan layers, not an opacity ramp: drawing
+ * the other 10 kecamatan's children at 4% opacity still produced ~55 hairlines
+ * across the map, which reads as noise rather than as "not this one".
  */
+
 /**
  * Suppress the basemap's own sub-area labels.
  *
@@ -128,6 +134,10 @@ function paint() {
     map.setPaintProperty('kec-line', 'line-width', 1.4);
     map.setPaintProperty('kec-label', 'text-color', p.sel);
     map.setPaintProperty('kec-label', 'text-halo-color', p.halo);
+    // Clear the drill-down label filter. Left in place it keeps the previously
+    // open kecamatan unlabelled at city view — invisible, and only explicable
+    // by reading the filter back out of the layer.
+    map.setFilter('kec-label', null);
     map.setLayoutProperty('kel-fill', 'visibility', 'none');
     map.setLayoutProperty('kel-line', 'visibility', 'none');
     map.setLayoutProperty('kel-label', 'visibility', 'none');
@@ -136,38 +146,45 @@ function paint() {
   }
 
   setForeignLabels(false);
-  map.setLayoutProperty('kel-fill', 'visibility', 'visible');
-  map.setLayoutProperty('kel-line', 'visibility', 'visible');
 
-  // Only the open kecamatan's children get labels — 63 names at once would be
-  // unreadable and would fight the basemap for attention.
-  map.setFilter('kel-label', ['==', ['get', 'district_code'], state.district]);
-  map.setLayoutProperty('kel-label', 'visibility', 'visible');
+  // Only the open kecamatan's children exist on screen. Filtering the source
+  // down (rather than dimming it) is what keeps the other 10 kecamatan reading
+  // as plain areas — see the note on paint().
+  const kidsOnly = ['==', ['get', 'district_code'], state.district];
+  for (const id of ['kel-fill', 'kel-line', 'kel-label']) {
+    map.setFilter(id, kidsOnly);
+    map.setLayoutProperty(id, 'visibility', 'visible');
+  }
   map.setPaintProperty('kel-label', 'text-color', p.ink);
   map.setPaintProperty('kel-label', 'text-halo-color', p.halo);
 
   // Compare on village_code, not village: two kelurahan share the name
   // "Curug", so a name comparison would highlight both at once.
   const isSel = ['==', ['get', 'village_code'], state.village];
-  const isOpen = ['==', ['get', 'district_code'], state.district];
 
-  // Selected kelurahan solid, the rest of the open kecamatan lightly tinted,
-  // and everything outside it faint — so the open kecamatan reads as one unit.
+  // Selected kelurahan solid, the rest of the open kecamatan lightly tinted.
+  // Every feature passing the filter is inside the open kecamatan, so the
+  // old "isOpen" branch is now unconditional.
   map.setPaintProperty('kel-fill', 'fill-color', p.selFill);
-  map.setPaintProperty('kel-fill', 'fill-opacity',
-    ['case', isSel, 0.62, isOpen, 0.16, 0.04]);
-  map.setPaintProperty('kel-line', 'line-color',
-    ['case', isSel, p.sel, p.line]);
-  map.setPaintProperty('kel-line', 'line-width',
-    ['case', isSel, 2.5, isOpen, 1.2, 0.8]);
+  map.setPaintProperty('kel-fill', 'fill-opacity', ['case', isSel, 0.62, 0.16]);
+  map.setPaintProperty('kel-line', 'line-color', ['case', isSel, p.sel, p.line]);
+  map.setPaintProperty('kel-line', 'line-width', ['case', isSel, 2.5, 1.2]);
 
-  map.setPaintProperty('kec-fill', 'fill-color', p.selFill);
-  map.setPaintProperty('kec-fill', 'fill-opacity', 0.03);
-  map.setPaintProperty('kec-line', 'line-color', p.sel);
-  map.setPaintProperty('kec-line', 'line-width', 1.8);
-  // At kecamatan view the open district's own label would sit on top of its
-  // children's names, so it fades out.
-  map.setLayoutProperty('kec-label', 'visibility', 'none');
+  // The open kecamatan drops to a hairline so its children carry the fill;
+  // the other 10 keep the city-level treatment, so the city's shape and the
+  // open one's position inside it both stay readable.
+  map.setPaintProperty('kec-fill', 'fill-color', p.peerFill);
+  map.setPaintProperty('kec-fill', 'fill-opacity', 0.12);
+  map.setPaintProperty('kec-line', 'line-color', p.line);
+  map.setPaintProperty('kec-line', 'line-width', 1.4);
+
+  // Label every kecamatan EXCEPT the open one — its own name would sit on top
+  // of its children's. The others are useful: they are the map's "you are here"
+  // at this level, and they are what a click on them acts on.
+  map.setFilter('kec-label', ['!=', ['get', 'district_code'], state.district]);
+  map.setLayoutProperty('kec-label', 'visibility', 'visible');
+  map.setPaintProperty('kec-label', 'text-color', p.peer);
+  map.setPaintProperty('kec-label', 'text-halo-color', p.halo);
 }
 
 function addLayers() {
@@ -261,12 +278,17 @@ function addLayers() {
 
 map.on('load', addLayers);
 
-/* Click routing by level: a kecamatan click drills in, a kelurahan click
-   selects. Guards keep a click from re-firing the other level's handler. */
+/* Click routing: a kecamatan click opens it, a kelurahan click selects it.
+   Both levels are clickable at once once drilled in — the open kecamatan's
+   children sit on top of their parent, so a click inside it reaches both
+   handlers. The parent's handler ignores its own district_code and lets the
+   kelurahan handler win; a click on one of the other 10 switches to it
+   directly, which is the same gesture as at city view. */
 map.on('click', 'kec-fill', e => {
-  if (state.view !== 'city') return;
   const f = e.features && e.features[0];
-  if (f) openDistrict(f.properties.district_code);
+  if (!f) return;
+  if (f.properties.district_code === state.district) return;
+  openDistrict(f.properties.district_code);
 });
 
 map.on('click', 'kel-fill', e => {
@@ -401,6 +423,7 @@ function renderCard(kecOverride) {
       <div class="card-name"></div>
     </div>
     <div class="ladder"></div>
+    <div class="kids"></div>
     <div class="card-foot">
       <span class="code"></span>
       <button class="copy" type="button"></button>
@@ -425,6 +448,27 @@ function renderCard(kecOverride) {
   const codeEl = card.querySelector('.code');
   const btn = card.querySelector('.copy');
 
+  // The open kecamatan's kelurahan as a chip row. The map draws them, but on a
+  // phone several of Limo's 8 fit side by side at most — the chips are the
+  // reliable way to reach one by name, and they double as the legend for the
+  // selected chip. Hidden once a kelurahan is chosen: the card is then about
+  // that one, and the map already highlights its siblings.
+  const kidsEl = card.querySelector('.kids');
+  if (!sp) {
+    kidsEl.hidden = false;
+    for (const f of kids.slice().sort((a, b) =>
+      a.properties.village.localeCompare(b.properties.village))) {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'chip';
+      chip.textContent = f.properties.village;
+      chip.addEventListener('click', () => selectVillage(f.properties.village_code));
+      kidsEl.append(chip);
+    }
+  } else {
+    kidsEl.hidden = true;
+  }
+
   if (sp) {
     codeEl.textContent = sp.village_code;
     btn.textContent = 'Salin kode';
@@ -445,23 +489,32 @@ function renderCard(kecOverride) {
       }
     });
   } else {
+    // No button here: the chip row above already lists this kecamatan's
+    // kelurahan by name. The old "Lihat N kelurahan" button just refilled the
+    // search box with the district name to reach the same list.
     codeEl.textContent = kp.district_code;
-    btn.textContent = `Lihat ${kids.length} kelurahan`;
-    btn.addEventListener('click', () => {
-      const input = document.getElementById('q');
-      input.value = kp.district;
-      input.dispatchEvent(new Event('input'));
-      input.focus();
-    });
   }
 }
 
 /* ---------- back button ---------- */
 const backBtn = document.getElementById('back');
 
+/**
+ * Back walks one step up the hierarchy, so its label names the level it
+ * returns to rather than always saying "all kecamatan": from a kelurahan it
+ * reads "Ke Limo", from a kecamatan "Semua kecamatan". A single fixed label
+ * would tell you nothing about where you are going.
+ */
 function renderBack() {
   backBtn.hidden = state.view === 'city';
-  if (state.view !== 'city') backBtn.querySelector('span').textContent = 'Semua kecamatan';
+  if (state.view === 'city') return;
+  const label = backBtn.querySelector('span');
+  if (state.village) {
+    const kec = KEC_BY_CODE.get(state.district);
+    label.textContent = kec ? `Ke ${kec.properties.district}` : 'Semua kecamatan';
+  } else {
+    label.textContent = 'Semua kecamatan';
+  }
 }
 
 /* ---------- search ---------- */
@@ -662,7 +715,20 @@ document.addEventListener('click', e => {
   if (!e.target.closest('.search')) hideResults();
 });
 
-backBtn.addEventListener('click', () => goCity());
+/**
+ * One step up the hierarchy: a selected kelurahan returns to its kecamatan
+ * (keeping the camera where it is — the parent is still on screen, so
+ * re-fitting would only undo the user's zoom), a kecamatan returns to city.
+ */
+backBtn.addEventListener('click', () => {
+  if (state.view === 'kecamatan' && state.village) {
+    const kec = KEC_BY_CODE.get(state.district);
+    if (kec) openDistrict(kec.properties.district_code, { zoom: false });
+    else goCity();
+    return;
+  }
+  goCity();
+});
 
 /* ---------- theme ---------- */
 const themeBtn = document.getElementById('theme');

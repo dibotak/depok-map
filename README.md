@@ -42,10 +42,16 @@ would 404 every asset — use `map.dibotak.com`, not a subpath.
 
 ## What it does
 
-- **Drill down one level at a time.** City view highlights the whole city and
-  shows all 11 kecamatan boundaries, each labelled. Click one to zoom in and see
-  every kelurahan inside it, labelled with its name. Click a kelurahan to
-  select it. `Semua kecamatan` goes back.
+- **Drill down one level at a time.** City view shows the 11 kecamatan
+  boundaries, each labelled, and no kelurahan at all. Click one to zoom in: that
+  kecamatan's kelurahan appear and are labelled, while the other 10 stay plain
+  polygons — so you keep the city's shape around you without 55 irrelevant
+  hairlines. Click a kelurahan to select it, or click one of the other
+  kecamatan to jump straight to it. The card lists the open kecamatan's
+  kelurahan as chips, which is the reliable way to pick one on a phone.
+- **Back walks up one level.** From a kelurahan it reads `Ke Limo` and returns to
+  Limo with its children still drawn; from a kecamatan it reads `Semua
+  kecamatan` and returns to the city view.
 - **Search** any kecamatan or kelurahan. Fuzzy matching (exact → prefix →
   substring → subsequence), so `sgm`, `sukam`, or the full `id3276031005` all
   work. Results are ranked name → code → district siblings, so `cimang` puts
@@ -60,7 +66,12 @@ would 404 every asset — use `map.dibotak.com`, not a subpath.
 
 At each level the map shows only that level's detail — 63 kelurahan lines drawn
 over 11 kecamatan outlines at city zoom reads as noise, not hierarchy. The
-kelurahan overlay is genuinely hidden, not just dimmed.
+kelurahan overlay is genuinely hidden, not just dimmed, and at kecamatan view the
+kelurahan layers are *filtered* to the open district rather than dimmed: the
+other 10 kecamatan's children at 4% opacity were still ~55 visible hairlines.
+Any `setFilter` a view applies must be cleared by the view that replaces it —
+`paint()` resets `kec-label` to `null` at city view, or the last-opened
+kecamatan stays silently unlabelled.
 
 ## Layout
 
