@@ -63,11 +63,16 @@ const PALETTE = {
     // Road highlight is deliberately outside the green admin family, so a
     // selected road never reads as a selected kecamatan.
     road: '#c2410c',
+    // Transport highlight is a violet, outside both the green admin family and
+    // the orange road highlight, so a selected route can't be mistaken for a
+    // selected road or a selected kecamatan.
+    trans: '#6d28d9',
   },
   dark: {
     sel: '#6fd39b', selFill: '#6fd39b', peer: '#3f7f5c', peerFill: '#38745a',
     line: '#4a5a4e', ink: '#d8e6dc', halo: '#10130e',
     road: '#fb923c',
+    trans: '#a78bfa',
   },
 };
 
@@ -90,6 +95,7 @@ map.addControl(new maplibregl.ScaleControl({ maxWidth: 110, unit: 'metric' }), '
 const SRC_KEC = 'kecamatan';
 const SRC_KEL = 'kelurahan';
 const SRC_ROAD = 'jalan';
+const SRC_TRANS = 'rute';
 let mapReady = false;
 
 /**
@@ -152,6 +158,17 @@ function paint() {
     map.setPaintProperty('road-sel-halo', 'line-color', p.road);
     map.setPaintProperty('road-sel-label', 'text-halo-color', p.road);
     map.setPaintProperty('road-sel-label', 'text-color', p.halo);
+  }
+  // The transport layers need the same treatment. Guarded per-layer because a
+  // theme flip during the initial map load can run before addLayers() has
+  // created all three, and setPaintProperty on a missing layer throws.
+  for (const [id, prop, val] of [
+    ['trans-sel', 'line-color', p.trans],
+    ['trans-sel-halo', 'line-color', p.trans],
+    ['trans-sel-label', 'text-halo-color', p.trans],
+    ['trans-sel-label', 'text-color', p.halo],
+  ]) {
+    if (map.getLayer(id)) map.setPaintProperty(id, prop, val);
   }
 
   if (state.view === 'city') {
@@ -298,6 +315,56 @@ function addLayers() {
         'text-halo-blur': 0.6,
       },
     });
+  }
+  // The selected public-transport route. Separate source from the road one for
+  // the same reason: it must survive a district change and be clearable on its
+  // own, and it is drawn in a colour no other layer uses.
+  if (!map.getSource(SRC_TRANS)) {
+    map.addSource(SRC_TRANS, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+  }
+  if (!map.getLayer('trans-sel')) {
+    map.addLayer({
+      id: 'trans-sel-halo', type: 'line', source: SRC_TRANS,
+      filter: ['==', ['get', 'role'], 'line'],
+      paint: {
+        'line-color': PALETTE[state.theme].trans,
+        'line-width': 14,
+        'line-opacity': 0.24,
+        'line-blur': 4,
+      },
+    });
+    map.addLayer({
+      id: 'trans-sel', type: 'line', source: SRC_TRANS,
+      filter: ['==', ['get', 'role'], 'line'],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': PALETTE[state.theme].trans,
+        // A transit route is a recurring service, so it reads as a dashed line
+        // rather than the solid road highlight.
+        'line-dasharray': [2, 1.6],
+        'line-width': 3.6,
+        'line-opacity': 0.95,
+      },
+    });
+    if (!map.getLayer('trans-sel-label')) {
+      map.addLayer({
+        id: 'trans-sel-label', type: 'symbol', source: SRC_TRANS,
+        filter: ['==', ['get', 'role'], 'label'],
+        layout: {
+          'text-field': ['get', 'label'],
+          'text-size': 12,
+          'text-font': ['Noto Sans Regular'],
+          'text-anchor': 'center',
+          'symbol-placement': 'point',
+        },
+        paint: {
+          'text-color': PALETTE[state.theme].halo,
+          'text-halo-color': PALETTE[state.theme].trans,
+          'text-halo-width': 2.6,
+          'text-halo-blur': 0.4,
+        },
+      });
+    }
   }
   // The selected road (Perda 9/2022 Pasal 16). Separate from the admin layers so
   // it survives a district change, and drawn in a colour no admin layer uses.
@@ -844,8 +911,21 @@ function applyTheme(next) {
   state.theme = next;
   document.documentElement.dataset.theme = next;
   localStorage.setItem('depok-theme', next);
-  document.querySelector('meta[name=theme-color]').content =
-    getComputedStyle(document.documentElement).getPropertyValue('--theme-color').trim();
+  // Both selection banners carry their colour as an inline custom property set
+  // at selection time, so a theme flip leaves them in the old theme's colour.
+  // Recolor the property directly rather than re-rendering: renderRoadCard and
+  // the transport equivalent both need the road/route lookup maps, which are
+  // declared further down and would be in the TDZ here.
+  if (!roadCard.hidden) roadCard.style.setProperty('--road-c', PALETTE[next].road);
+  if (!transportCard.hidden) transportCard.style.setProperty('--road-c', PALETTE[next].trans);
+  // Optional: absent meta must not abort the rest of the theme swap. It is last
+  // precisely because it is the one line that can throw on a page that omits the
+  // tag, and everything above it (including the banner recolour) is what matters.
+  const meta = document.querySelector('meta[name=theme-color]');
+  if (meta) {
+    meta.content =
+      getComputedStyle(document.documentElement).getPropertyValue('--theme-color').trim();
+  }
   // Dark mode re-wraps the licence line to a different number of lines, so the
   // card's offset has to be re-derived once the new theme has painted.
   requestAnimationFrame(relayoutOverlays);
@@ -1021,6 +1101,16 @@ const roadCard = document.getElementById('road-card');
 const roadCardKlas = document.getElementById('road-card-klas');
 const roadCardName = document.getElementById('road-card-name');
 
+/* Transport DOM handles live here rather than in the transport section,
+   because positionRoadCard() (above) needs the card element to stack whichever
+   selection banner is showing. Declaring it further down would put it in the
+   temporal dead zone at that point. */
+const transportCard = document.getElementById('transport-card');
+const transportCardRef = document.getElementById('transport-card-ref');
+const transportCardName = document.getElementById('transport-card-name');
+const transportNote = document.getElementById('transport-note');
+const transportGroups = document.getElementById('transport-groups');
+
 /** Show the selected road's Perda class + name in a persistent banner, and keep
  *  it stacked above the answer card rather than on top of it. */
 function renderRoadCard(road, label) {
@@ -1047,14 +1137,19 @@ function renderRoadCard(road, label) {
  *  change what it should sit on top of.
  */
 function positionRoadCard() {
-  if (roadCard.hidden) return;
+  // Positions whichever selection banner is showing. It used to return early
+  // when roadCard was hidden, which was correct with one banner but not with
+  // two: selecting a transport route left this a no-op and the banner rendered
+  // at its unpositioned default, overlapping the answer card.
+  const banners = [roadCard, transportCard].filter(b => b && !b.hidden);
+  if (!banners.length) return;
   const cardEl = document.getElementById('card');
   const gap = 12;
   let offset = 0;
   if (cardEl && !cardEl.hidden) {
     offset = Math.max(0, window.innerHeight - cardEl.getBoundingClientRect().top) + gap;
   }
-  roadCard.style.setProperty('--card-h', `${offset}px`);
+  for (const b of banners) b.style.setProperty('--card-h', `${offset}px`);
 }
 
 /** Publish the attribution's real height so the card can clear it.
@@ -1160,17 +1255,32 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && !sideEl.hidden) setSidebar(false);
 });
 
+/* Three tabs now, so this is driven by a name rather than a boolean. The earlier
+ * two-tab version was `const road = which === 'road'` and toggled both tabs off
+ * that one flag, which cannot express a third panel: 'area' and 'transport'
+ * would both fall through to the same branch. */
+const TABS = [
+  { id: 'area', tab: 'tab-area', panel: 'panel-area' },
+  { id: 'road', tab: 'tab-road', panel: 'panel-road' },
+  { id: 'transport', tab: 'tab-transport', panel: 'panel-transport' },
+];
+
 function setTab(which) {
-  const road = which === 'road';
-  tabArea.classList.toggle('is-on', !road);
-  tabRoad.classList.toggle('is-on', road);
-  tabArea.setAttribute('aria-selected', String(!road));
-  tabRoad.setAttribute('aria-selected', String(road));
-  panelArea.hidden = road;
-  panelRoad.hidden = !road;
+  for (const t of TABS) {
+    const on = t.id === which;
+    const tabEl = document.getElementById(t.tab);
+    const panelEl = document.getElementById(t.panel);
+    if (tabEl) {
+      tabEl.classList.toggle('is-on', on);
+      tabEl.setAttribute('aria-selected', String(on));
+    }
+    if (panelEl) panelEl.hidden = !on;
+  }
 }
-tabArea.addEventListener('click', () => setTab('area'));
-tabRoad.addEventListener('click', () => setTab('road'));
+for (const t of TABS) {
+  const el = document.getElementById(t.tab);
+  if (el) el.addEventListener('click', () => setTab(t.id));
+}
 
 /** Area list: 11 kecamatan, then their kelurahan once one is open. */
 function renderAreaList() {
@@ -1390,12 +1500,202 @@ function renderRoads() {
   }
 }
 
+/* ---------- transport ---------- */
+const TRANSPORT = window.DEPOK_TRANSPORT || { routes: [] };
+
+/** Which route is selected, by `key`. */
+let selectedRoute = null;
+/** Which transport groups are expanded. 'kota' starts open because the whole
+ *  point of this layer is the intra-city network. */
+const transportOpen = new Set(['kota', 'bus-kota', 'rail']);
+
+
+/** Line+label GeoJSON for one route.
+ *
+ *  Same shape as the roads one, for the same reason: MapLibre symbol layers
+ *  cannot label a LineString, so the name goes on a Point at the midpoint of
+ *  the longest segment. */
+function transportFeatures(route) {
+  const out = [];
+  const segs = route.segments || [];
+  let longest = -1;
+  let mid = null;
+  for (const s of segs) {
+    if (!s || s.length < 2) continue;
+    out.push({
+      type: 'Feature',
+      properties: { role: 'line' },
+      geometry: { type: 'LineString', coordinates: s },
+    });
+    if (s.length > longest) {
+      longest = s.length;
+      mid = s[Math.floor(s.length / 2)];
+    }
+  }
+  if (mid) {
+    out.push({
+      type: 'Feature',
+      properties: { role: 'label', label: route.ref || route.name },
+      geometry: { type: 'Point', coordinates: mid },
+    });
+  }
+  return { type: 'FeatureCollection', features: out };
+}
+
+function transportBounds(route) {
+  let minx = 180, miny = 90, maxx = -180, maxy = -90;
+  for (const s of route.segments || []) {
+    for (const [x, y] of s) {
+      if (x < minx) minx = x;
+      if (x > maxx) maxx = x;
+      if (y < miny) miny = y;
+      if (y > maxy) maxy = y;
+    }
+  }
+  return minx <= maxx ? [[minx, miny], [maxx, maxy]] : null;
+}
+
+/** Draw the selected route, zoom to it, and show its banner. */
+function highlightRoute(key) {
+  selectedRoute = key;
+  if (!map.getSource(SRC_TRANS)) return;
+  const route = TRANSPORT.routes.find(r => r.key === key);
+  if (!route || !route.segments || !route.segments.length) {
+    map.getSource(SRC_TRANS).setData({ type: 'FeatureCollection', features: [] });
+    transportCard.hidden = true;
+    renderTransport();
+    return;
+  }
+  map.getSource(SRC_TRANS).setData(transportFeatures(route));
+  const b = transportBounds(route);
+  if (b) {
+    map.fitBounds(b, {
+      padding: { top: 120, bottom: 220, left: 80, right: 80 },
+      maxZoom: 15.5,
+      duration: 800,
+    });
+  }
+  transportCardRef.textContent = route.ref || route.network || 'Rute';
+  transportCardName.textContent = routeName(route);
+  transportCard.style.setProperty('--road-c', PALETTE[state.theme].trans);
+  transportCard.hidden = false;
+  positionRoadCard();
+  renderTransport();
+}
+
+function routeName(r) {
+  const a = r.from, b = r.to;
+  if (a && b) return `${a} – ${b}`;
+  return r.name;
+}
+
+/** The groups, in the order a rider would look for them: your own city first,
+ *  then rail, then everything that leaves the city. */
+function transportGroupsOf() {
+  const routes = TRANSPORT.routes || [];
+  const kota = routes.filter(r => r.scope === 'kota');
+  return [
+    { key: 'kota', label: 'Dalam kota', hint: 'Bus kota & angkot',
+      items: kota },
+    { key: 'bus-kota', label: 'Bus kota (terverifikasi)',
+      hint: 'K1 / D10A',
+      items: kota.filter(r => r.klass === 'bus-kota' && r.geometry === 'osm') },
+    { key: 'rail', label: 'Kereta & LRT',
+      hint: 'KRL Commuter · LRT Jabodeks',
+      items: routes.filter(r => r.klass === 'krl' || r.klass === 'lrt') },
+    { key: 'lintas', label: 'Lintas kota',
+      hint: 'Feeder ke Jakarta/Bogor',
+      items: routes.filter(r => r.scope !== 'kota' && r.klass === 'bus-lintas') },
+  ].filter(g => g.items.length);
+}
+
+function renderTransport() {
+  if (!TRANSPORT.routes || !TRANSPORT.routes.length) {
+    transportNote.innerHTML = 'Data transportasi belum tersedia.';
+    transportGroups.innerHTML = '';
+    return;
+  }
+  const kota = TRANSPORT.routes.filter(r => r.scope === 'kota').length;
+  const unver = TRANSPORT.routes.filter(r => r.status === 'unverified').length;
+  transportNote.innerHTML =
+    `Dari <b>OpenStreetMap</b> — ${TRANSPORT.routes.length} rute yang melintasi `
+    + `Kota Depok, disaring batas kota. <b>${kota}</b> di dalam kota. `
+    + (unver
+      ? `${unver} rute berstatus <i>belum diverifikasi</i> untuk 2026: `
+        + `OSM mencatat jalurnya, bukan apakah layanannya masih jalan.`
+      : '')
+    + ` Jalur angkot <i>diestimasi</i> dari jaringan jalan OSM, bukan hasil survei.`;
+
+  let html = '';
+  for (const g of transportGroupsOf()) {
+    const open = transportOpen.has(g.key);
+    html += `<div class="road-group${open ? ' is-open' : ''}" data-key="${esc(g.key)}">
+      <button class="road-head" type="button" aria-expanded="${open}">
+        <span class="road-chev">▶</span>
+        <span class="road-title">${esc(g.label)}</span>
+        <span class="road-basis">${esc(g.hint)}</span>
+        <span class="road-count">${g.items.length}</span>
+      </button>
+      <div class="road-body">`;
+    for (const r of g.items) {
+      const isOn = selectedRoute === r.key;
+      const noGeom = !r.segments || !r.segments.length;
+      const unver = r.status === 'unverified';
+      html += `<button class="road-row${isOn ? ' is-on' : ''}${noGeom ? ' is-dead' : ''}"
+        type="button" data-key="${esc(r.key)}"${noGeom ? ' disabled' : ''}
+        title="${esc(r.source || '')}">
+        ${r.ref ? `<span class="rr-ref">${esc(r.ref)}</span>` : ''}
+        <span class="rr-name">${esc(routeName(r))}</span>
+        ${unver ? '<span class="rr-badge">belum verifikasi</span>' : ''}
+        ${noGeom ? '<span class="rr-badge">tanpa jalur</span>' : ''}
+        ${r.geometry === 'estimated' ? '<span class="rr-badge">estimasi</span>' : ''}
+        ${r.fare ? `<span class="rr-fare">${esc(r.fare)}</span>` : ''}
+      </button>`;
+    }
+    html += `</div></div>`;
+  }
+  if ((TRANSPORT.inactive_trayek || []).length) {
+    html += `<details class="trans-dead">
+      <summary>Trayek berhenti beroperasi (${TRANSPORT.inactive_trayek.length})</summary>
+      <ul>` + TRANSPORT.inactive_trayek
+        .map(t => `<li><b>${esc(t.ref)}</b> ${esc(t.name)}</li>`).join('') + `</ul>
+    </details>`;
+  }
+  transportGroups.innerHTML = html;
+}
+
+/* Transport list interaction. Separate handlers from the road ones because the
+   two lists share class names but not behaviour, and a combined query would
+   make each of them guard against the other's rows. Placed after renderTransport
+   so transportGroups is already initialised — attaching a listener to a const
+   before its declaration throws on the TDZ. */
+transportGroups.addEventListener('click', e => {
+  const head = e.target.closest('.road-head');
+  if (head) {
+    const g = head.closest('.road-group');
+    const key = g.dataset.key;
+    if (transportOpen.has(key)) transportOpen.delete(key);
+    else transportOpen.add(key);
+    renderTransport();
+    return;
+  }
+  const row = e.target.closest('.road-row');
+  if (row && !row.disabled) {
+    const k = row.dataset.key;
+    highlightRoute(selectedRoute === k ? null : k);
+    if (window.matchMedia('(max-width: 760px)').matches) setSidebar(false);
+  }
+});
+document.getElementById('transport-card-x')
+  .addEventListener('click', () => highlightRoute(null));
+
 /* ---------- boot ---------- */
 document.documentElement.dataset.theme = state.theme;
 renderCard();
 renderBack();
 renderAreaList();
 renderRoads();
+renderTransport();
 sideEl.hidden = true;
 /* Measure the attribution before the first overlay placement, so the card does
    not paint on top of the licence line and then jump. */

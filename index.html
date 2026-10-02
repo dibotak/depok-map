@@ -56,6 +56,8 @@
               aria-controls="panel-area" type="button">Wilayah</button>
       <button class="side-tab" id="tab-road" role="tab" aria-selected="false"
               aria-controls="panel-road" type="button">Jalan</button>
+      <button class="side-tab" id="tab-transport" role="tab" aria-selected="false"
+              aria-controls="panel-transport" type="button">Transportasi</button>
     </div>
     <!-- Theme lives here rather than in the search bar, so the input gets the
          full width of the top row. -->
@@ -107,7 +109,30 @@
       <div id="road-groups"></div>
     </div>
   </div>
+
+  <!-- transport ------------------------------------------------------ -->
+  <div class="side-panel" id="panel-transport" role="tabpanel"
+       aria-labelledby="tab-transport" hidden>
+    <div class="side-scroll" id="transport-scroll">
+      <p class="side-note" id="transport-note"></p>
+      <div id="transport-groups"></div>
+    </div>
+  </div>
 </aside>
+
+<!-- selected route banner -------------------------------------------- -->
+<div class="road-note-card" id="transport-card" hidden>
+  <div class="rnc-text">
+    <span class="rnc-klas" id="transport-card-ref"></span>
+    <span class="rnc-name" id="transport-card-name"></span>
+  </div>
+  <button class="rnc-x" id="transport-card-x" type="button"
+          aria-label="Hapus pilihan rute">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true">
+      <path d="M18 6L6 18M6 6l12 12"/>
+    </svg>
+  </button>
+</div>
 
 <!-- selected road banner --------------------------------------------- -->
 <div class="road-note-card" id="road-card" hidden>
@@ -144,12 +169,15 @@
   <a href="https://github.com/JfrAziz/indonesia-district" rel="noopener">indonesia-district</a> (CC BY-IGO, 2020) ·
   Map © <a href="https://www.openstreetmap.org/copyright" rel="noopener">OpenStreetMap</a> ·
   <a href="https://openfreemap.org" rel="noopener">OpenFreeMap</a> ·
-  Roads: <a href="https://jdih-dprd.depok.go.id/" rel="noopener">Perda Kota Depok No. 9/2022</a> Pasal 16
+  Roads: <a href="https://jdih-dprd.depok.go.id/" rel="noopener">Perda Kota Depok No. 9/2022</a> Pasal 16 ·
+  Transport: <a href="https://www.openstreetmap.org/copyright" rel="noopener">OpenStreetMap</a> ·
+  <a href="https://berita.depok.go.id/" rel="noopener">Dishub Kota Depok</a>
 </footer>
 
 <script src="/vendor/maplibre-gl.js"></script>
 <script src="/src/data.js"></script>
 <script src="/src/roads.js"></script>
+<script src="/src/transport.js"></script>
 <script src="/src/app.js"></script>
 </body>
 </html>

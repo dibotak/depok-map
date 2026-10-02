@@ -510,6 +510,28 @@ body.card-collapsed .card { padding-bottom: 10px; }
 .road-row.is-dead .rr-name { font-style: italic; }
 .road-empty { padding: 10px 13px 12px 26px; font-size: 12px; color: var(--faint); }
 
+/* Transport list. Reuses .road-row/.rr-* deliberately — the rows have the same
+   shape and interaction as jalan rows, so a second set of class names would
+   mean duplicating every rule for no gain. The transport-only additions are
+   the fare chip and the collapsed "stopped operating" list. */
+.road-row .rr-fare {
+  flex: none; font-size: 10px; font-weight: 650; color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.trans-dead { margin: 6px 13px 14px 26px; }
+.trans-dead > summary {
+  cursor: pointer; font-size: 11.5px; color: var(--muted); padding: 4px 0;
+  list-style: revert;
+}
+.trans-dead > summary:hover { color: var(--ink); }
+.trans-dead ul { margin: 6px 0 0; padding-left: 16px; }
+.trans-dead li { font-size: 11.5px; color: var(--faint); margin: 3px 0; }
+.trans-dead li b { color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* A disabled row (no geometry to draw) must not look tappable. */
+.road-row:disabled { cursor: default; opacity: .55; }
+.road-row:disabled:hover { background: transparent; color: var(--ink-2); }
+
 /* Selected-road banner, above the answer card. Inline rather than a toast, so it
    stays put while you keep using the map. */
 .road-note-card {
