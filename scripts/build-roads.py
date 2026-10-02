@@ -1,205 +1,375 @@
 #!/usr/bin/env python3
 """
-Fetch Depok's named arterial roads and group them by UU 22/2009 Pasal 25 class.
+Build the road list from Perda Kota Depok No. 9 Tahun 2022, Pasal 16.
 
-WHAT THIS IS, AND WHAT IT IS NOT
----------------------------------
-UU 22/2009 Pasal 25 classifies Indonesian roads by *administrative authority*,
-not by engineering function:
+WHY THIS REPLACES THE EARLIER INFERENCE
+---------------------------------------
+The previous build grouped OSM roads by UU 22/2009 Pasal 25 authority class and
+had to *guess* it, because OSM stores no road-authority tag:
 
-    Kelas I     Jalan Nasional      -_state roads
-    Kelas II    Jalan Provinsi       -province
-    Kelas III   Jalan Kabupaten/Kota -city/regency   <- Depok sits here
-    Kelas IV    Jalan Desa          -village
-    Kelas V     Jalan Lingkungan    -neighbourhood
+    ref is a bare integer  ->  Kelas I (Nasional)
+    otherwise              ->  Kelas III (Kabupaten/Kota)
 
-OSM carries **no authority tag**. There is no `road_authority`, no
-`jalan_nasional`, nothing in the schema that says who maintains a road. So this
-cannot be a lookup -- any static mapping would be a guess dressed as data.
+That was 17 roads in one bucket and 333 in the other. The second bucket was
+noise, and the README said so.
 
-The one signal that IS reliable is `ref`. Indonesian national routes carry a bare
-integer route number (2, 12, 17 here), and a numbered national route is Jalan
-Nasional by definition. So:
+Perda Kota Depok No. 9 Tahun 2022 (RTRW Kota Depok 2022-2042), **Pasal 16**,
+enumerates the city's road network explicitly. This is not an inference, it is
+the binding local regulation naming each class and listing the ruas in it:
 
-    ref is a bare integer  ->  Kelas I  (Nasional)   [inferred, high confidence]
-    otherwise              ->  Kelas III (Kabupaten/Kota)  [inferred, default]
+    ayat (1)  jalan umum = arteri | kolektor | lokal | lingkungan
+    ayat (2)  arteri     = arteri primer | arteri sekunder
+    ayat (3)  arteri primer     -> 1 ruas
+    ayat (4)  arteri sekunder   -> 14 ruas
+    ayat (5)  kolektor    = kolektor primer | kolektor sekunder
+    ayat (6)  kolektor primer   -> 18 ruas
+    ayat (7)  kolektor sekunder -> 38 ruas
+    ayat (8)  jalan lokal        -> "diatur lebih lanjut dalam RDTR"  (not listed)
+    ayat (9)  jalan lingkungan   -> "diatur lebih lanjut dalam RDTR"  (not listed)
+    ayat (10) jalan tol           -> 6 ruas
 
-Kelas II, IV and V are not emitted. They are not "empty" -- nothing here proves
-their absence, we simply cannot distinguish a 省-province road from a city road
-without the tag. Publishing them as empty would imply we looked and found none,
-which would be false. The sidebar omits them and says why.
+    77 enumerated ruas, in five groups.
 
-Perda Kota Depok No. 9 Tahun 2022 (RTRW 2022-2042) sets the spatial plan and
-names Jalan Kolektor among its classes, but the Perda is a planning instrument:
-it does not tag OSM ways, and its classification is not machine-readable from the
-street data. It is cited as context in the UI, not used to assign classes.
+So the classes are the Perda's, verbatim, and the list is the Perda's own
+enumeration rather than something derived from OSM tags. OSM is used only to
+*locate* each named rua so it can be drawn and labelled on the map.
 
-Source: OpenStreetMap via Overpass API, ODbL. Attribution is on the map already.
+WHAT IS AND IS NOT IN HERE
+--------------------------
+* `lokal` and `lingkungan` are absent, and the Perda is the reason: ayat (8) and
+  (9) defer both to the Rencana Detail Tata Ruang, a separate, non-published
+  document. That is a documented gap in the source, not a gap in the
+  extraction, and the UI says so instead of inventing two empty groups.
+* Matching a Perda entry to an OSM name is approximate -- a "ruas" often spans
+  several streets, and the Perda abbreviates ("Jalan Ir. H. Juanda" is tagged
+  "Jalan Insinyur Haji Juanda"). Entries with no OSM match are kept in the data
+  with `matched: []` so the list still shows the full 77. They are NOT silently
+  dropped, and the UI marks them as not locatable on the map.
+
+Source: Perda Kota Depok No. 9 Tahun 2022, BAB II Pasal 16.
+Road geometry: OpenStreetMap via Overpass API (ODbL).
 """
+import difflib
 import json
+import re
 import sys
 import time
 import urllib.parse
 import urllib.request
-from collections import defaultdict
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "src" / "roads.js"
+PERDA = Path("/home/ubuntu/.hermes/cache/scratch/perda2/perda9-2022.txt")
+# Overpass responses. Kept out of the repo (gitignored /tmp) and reused for a
+# day, because Overpass 504s under load and the four tile queries take minutes.
+CACHE = Path("/tmp/depok-roads-cache")
 
-# Overpass endpoints, tried in order. The main one 504s on large area queries,
-# which is why the query is a bbox rather than an area filter.
 ENDPOINTS = [
     "https://overpass-api.de/api/interpreter",
     "https://overpass.kumi.systems/api/interpreter",
     "https://overpass.private.coffee/api/interpreter",
 ]
 
-# Kota Depok bounding box (S,W,N,E). Overpass bbox order is south,west,north,east.
-BBOX = "-6.42,106.68,-6.32,106.90"
+# Wider than Kota Depok on purpose. Pasal 16 enumerates corridors that leave the
+# city -- Ruas Jalan Cibinong-Cimpaeun, Jalan Tole Iskandar-Pondok Rajeg to the
+# Bogor border. A Depok-only bbox matches 34/77; this one matches 72/77.
+# Tiled 2x2 because a single wide query 504s.
+TILES = [
+    (-6.52, 106.60, -6.38, 106.80),
+    (-6.52, 106.80, -6.38, 107.00),
+    (-6.38, 106.60, -6.24, 106.80),
+    (-6.38, 106.80, -6.24, 107.00),
+]
+HIGHWAY = "^(motorway|trunk|primary|secondary|tertiary|unclassified)$"
 
-# Only routes with an administrative identity. `unclassified`/`residential` are
-# the local street grid -- hundreds of them, unnamed or trivially named, and they
-# are exactly what the user is not asking to toggle between.
-HIGHWAY = "^(motorway|trunk|primary|secondary|tertiary)$"
+# Lossy prefixes stripped before matching. "Jalan Ir. H. Juanda" -> "JUANDA"
+# matches OSM's "Jalan Insinyur Haji Juanda" -> "JUANDA". Without this the two
+# abbreviations in the Perda cost two real roads their geometry.
+NOISE = r"\b(JALAN|JL\.|RUAS|RAYA|HJI\.|HAJI|H\.|IR\.|INSINYUR|R\.|RADEN|DRS\.|DR\.)\b"
 
-# OSM `class` -> Indonesian engineering function. Distinct from the UU authority
-# class above, and shown per road so the two are not confused.
-OSM_CLASS_LABEL = {
-    "motorway": "Tol",
-    "trunk": "Arteri",
-    "primary": "Arteri",
-    "secondary": "Kolektor",
-    "tertiary": "Kolektor",
-}
-
-CLASS_ORDER = ["I", "III"]
-
-CLASS_META = {
-    "I": {
-        "kelas": "I",
-        "name": "Jalan Nasional",
-        "basis": "ref bernomor (jalur nasional)",
-        "confidence": "high",
-    },
-    "III": {
-        "kelas": "III",
-        "name": "Jalan Kabupaten/Kota",
-        "basis": "tanpa ref; default kotamadya",
-        "confidence": "low",
-    },
-}
+# (label, ayat start, ayat end, key)
+GROUPS = [
+    ("Arteri Primer", "3", "4", "arteri-primer"),
+    ("Arteri Sekunder", "4", "5", "arteri-sekunder"),
+    ("Kolektor Primer", "6", "7", "kolektor-primer"),
+    ("Kolektor Sekunder", "7", "8", "kolektor-sekunder"),
+    ("Jalan Tol", "10", "11", "tol"),
+]
 
 
-def fetch(query, tries=3):
-    """POST an Overpass query, trying each endpoint then backing off on 504."""
-    body = urllib.parse.urlencode({"data": query}).encode()
-    last = None
+def _overpass(query, label, tries=3):
+    """Run one Overpass query across all endpoints, with backoff."""
     for attempt in range(tries):
         for ep in ENDPOINTS:
             try:
+                body = urllib.parse.urlencode({"data": query}).encode()
                 req = urllib.request.Request(
                     ep,
                     data=body,
                     headers={
                         "Content-Type": "application/x-www-form-urlencoded",
-                        "User-Agent": "depok-map/1.0 (road class build)",
+                        "User-Agent": "depok-map/1.0 (Perda 9/2022 road build)",
                     },
                 )
-                with urllib.request.urlopen(req, timeout=180) as r:
-                    payload = r.read()
-                sys.stderr.write(f"  ok {ep.split('/')[2]} ({len(payload)} bytes)\n")
-                return json.loads(payload)
-            except Exception as e:
-                last = e
-                sys.stderr.write(f"  fail {ep.split('/')[2]}: {e}\n")
-        time.sleep(5 * (attempt + 1))
-    raise SystemExit(f"all Overpass endpoints failed: {last}")
+                with urllib.request.urlopen(req, timeout=200) as r:
+                    data = json.loads(r.read())
+                sys.stderr.write(f"  {label} -> {len(data.get('elements', []))} ways\n")
+                return data
+            except Exception as exc:
+                sys.stderr.write(f"  {label} {ep.split('/')[2]}: {exc}\n")
+        time.sleep(8 * (attempt + 1))
+    return None
 
 
-def infer_kelas(ref):
-    """UU 22/2009 Pasal 25 class, inferred from the national route number.
+def fetch_osm():
+    """Named roads over the tiled bbox, cached to /tmp.
 
-    Indonesian national routes are numbered with a bare integer. Anything else
-    (a district code like 22.01.729, or empty) is not a national route.
+    Overpass is rate-limited and 504s under any real load: a single wide query
+    over the whole metro area times out every time, and four tiled queries take
+    3-6 minutes with retries. The result changes only when OSM does, so it is
+    cached for a day. `ROADS_CACHE_AGE=0` forces a refetch.
     """
-    ref = (ref or "").strip()
-    return "I" if ref.isdigit() else "III"
+    cache = CACHE.with_suffix(".names.json")
+    if cache.exists() and time.time() - cache.stat().st_mtime < 86400:
+        sys.stderr.write(f"using cached name query ({cache})\n")
+        return {e["id"]: e for e in json.loads(cache.read_text())["elements"]}
+
+    ways = {}
+    for bb in TILES:
+        query = (
+            f'[out:json][timeout:180];'
+            f'way["highway"~"{HIGHWAY}"]["name"]({bb[0]},{bb[1]},{bb[2]},{bb[3]});'
+            f"out tags;"
+        )
+        data = _overpass(query, f"tile {bb[0]},{bb[1]}")
+        if data:
+            for e in data.get("elements", []):
+                ways[e["id"]] = e
+    if not ways:
+        raise SystemExit("ERROR: Overpass returned no ways -- refusing to build an empty list")
+    cache.write_text(json.dumps({"elements": list(ways.values())}))
+    sys.stderr.write(f"  cached {len(ways)} ways -> {cache}\n")
+    return ways
+
+
+def load_perda():
+    """Isolate Pasal 16 and pull out each ayat's enumerated ruas."""
+    if not PERDA.exists():
+        raise SystemExit(
+            f"ERROR: {PERDA} not found.\n"
+            "The Perda text is not committed (232 pages). Re-fetch it with:\n"
+            "  curl -sL https://r.jina.ai/"
+            "https://jdih-dprd.depok.go.id/assets/uploads/files/produk/2022pd3224009.pdf"
+        )
+    text = PERDA.read_text(encoding="utf-8", errors="replace")
+    i = text.find("Pasal 16 (1) Jalan umum")
+    if i < 0:
+        raise SystemExit("ERROR: could not locate Pasal 16 in the Perda text")
+    seg = text[i:text.find("Pasal 17", i)]
+    # Strip the running page numbers the PDF text layer interleaves
+    # ("29 (5) Jalan kolektor..."), which otherwise corrupt the ayat numbering.
+    seg = re.sub(r"\b(2[5-9]|3[0-9])\s+", " ", seg)
+    return re.sub(r"\s+", " ", seg)
+
+
+def ayat(seg, a, b):
+    x = seg.find(f"({a})")
+    y = seg.find(f"({b})", x)
+    return seg[x:y]
+
+
+def lettered(body):
+    """Split 'a. foo; b. bar; ...' into (letter, text). Handles a..ll."""
+    parts = re.split(r"(?:^|\s)([a-z]{1,2})\.\s+", body)
+    return [(parts[k], parts[k + 1].strip().rstrip(";").rstrip(".").strip())
+            for k in range(1, len(parts) - 1, 2)]
+
+
+def norm(s):
+    s = s.upper()
+    s = re.sub(NOISE, " ", s)
+    s = re.sub(r"[^A-Z0-9]+", " ", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def streets(entry):
+    """A 'ruas' often names several streets joined by dashes.
+
+    'Ruas Jalan Merawan - Jalan Cinere Raya - Jalan Limo Raya' is three roads.
+    Parentheticals carry qualifiers ('(Jl. Raya Bogor)', '(Simpang Siliwangi -
+    Simpang Ramanda)') and are dropped -- they describe the segment, not its name.
+    """
+    body = re.sub(r"\([^)]*\)", " ", entry)
+    parts = re.split(r"\s*[–—/]\s*|\s+dan\s+", body)
+    return [p.strip(" .,;") for p in parts if len(p.strip()) > 3]
+
+
+def fetch_geometry(names):
+    """Fetch full way geometry for the matched road names.
+
+    The tile query above returns tags only (`out tags`) because 8.9k ways with
+    coordinates is a large response. Geometry is only needed for the ~150 names
+    that actually matched a Perda ruas, so it is fetched in a second pass. This
+    is what lets a selected road be drawn and labelled on the map instead of
+    just highlighted in the list.
+    """
+    if not names:
+        return {}
+    cache = CACHE.with_suffix(".geom.json")
+    out = {}
+    if cache.exists() and time.time() - cache.stat().st_mtime < 86400:
+        out = json.loads(cache.read_text())
+        sys.stderr.write(f"using cached geometry ({len(out)} ways)\n")
+
+    todo = [n for n in sorted(names) if n not in out]
+    chunk = 25
+    for start in range(0, len(todo), chunk):
+        part = todo[start:start + chunk]
+        filt = "|".join(n.replace('"', '\\"') for n in part)
+        query = (
+            f'[out:json][timeout:180];'
+            f'way["highway"]["name"~"^({filt})$"](-6.52,106.60,-6.24,107.00);'
+            f"out geom;"
+        )
+        data = _overpass(query, f"geom {start + 1}-{start + len(part)}/{len(todo)}")
+        if not data:
+            continue
+        for e in data.get("elements", []):
+            geom = e.get("geometry")
+            if not geom:
+                continue
+            n = (e.get("tags", {}).get("name") or "").strip()
+            if n in out:
+                continue
+            coords = [[p["lon"], p["lat"]] for p in geom if p]
+            if len(coords) >= 2:
+                out[n] = {
+                    "class": e.get("tags", {}).get("highway", ""),
+                    "ref": (e.get("tags", {}).get("ref") or "").strip(),
+                    "coords": [[round(c[0], 6), round(c[1], 6)] for c in coords],
+                }
+        cache.write_text(json.dumps(out))
+    sys.stderr.write(f"  geometry for {len(out)}/{len(names)} names\n")
+    return out
 
 
 def main():
-    query = (
-        f'[out:json][timeout:150];'
-        f'way["highway"~"{HIGHWAY}"]({BBOX});'
-        f"out tags;"
-    )
-    sys.stderr.write(f"querying Overpass bbox={BBOX}\n")
-    data = fetch(query)
+    seg = load_perda()
+    sys.stderr.write("fetching OSM road names...\n")
+    ways = fetch_osm()
 
-    # Collapse the 1012 ways into distinct roads. OSM splits one street into many
-    # ways, so counting ways would triple-count every corridor.
-    roads = {}
-    for el in data.get("elements", []):
-        t = el.get("tags", {})
-        name = (t.get("name") or "").strip()
-        if not name:
-            continue  # an unnamed arterial has nothing to list or search for
-        ref = (t.get("ref") or "").strip()
-        osm_class = t.get("highway", "")
-        key = (name, ref)
-        r = roads.setdefault(
-            key,
-            {
-                "name": name,
-                "ref": ref,
-                "osm_class": osm_class,
-                "osm_label": OSM_CLASS_LABEL.get(osm_class, osm_class),
-                "kelas": infer_kelas(ref),
-                "ways": 0,
-            },
-        )
-        r["ways"] += 1
-        # A road can be tagged trunk on one way and primary on another. Keep the
-        # most significant class seen so the badge is stable.
-        rank = {"motorway": 0, "trunk": 1, "primary": 2, "secondary": 3, "tertiary": 4}
-        if rank.get(osm_class, 9) < rank.get(r["osm_class"], 9):
-            r["osm_class"] = osm_class
-            r["osm_label"] = OSM_CLASS_LABEL.get(osm_class, osm_class)
+    osm = {}
+    for e in ways.values():
+        name = (e.get("tags", {}).get("name") or "").strip()
+        if name:
+            osm[name] = e.get("tags", {}).get("highway", "")
+    index = {}
+    for name in osm:
+        index.setdefault(norm(name), name)
+    keys = sorted(index)
 
-    by_kelas = defaultdict(list)
-    for r in roads.values():
-        by_kelas[r["kelas"]].append(r)
+    def resolve(s):
+        n = norm(s)
+        if not n:
+            return []
+        if n in index:
+            return [index[n]]
+        hits = [index[k] for k in keys if k and (k in n or n in k)]
+        if hits:
+            return [hits[0]]
+        m = difflib.get_close_matches(n, keys, n=1, cutoff=0.82)
+        return [index[m[0]]] if m else []
+
+    classes = []
+    for label, a, b, key in GROUPS:
+        entries = [v for _, v in lettered(ayat(seg, a, b))]
+        if not entries:
+            # Ayat (3) is a single sentence with no lettered list:
+            # "(3) Jalan arteri primer ... meliputi ruas jalan Gandaria-..."
+            # Strip the cross-reference preamble so the row shows the road,
+            # not the law. The verb is "meliputi", not "melipui".
+            one = re.sub(r"^\(\d\).*?meliputi\s+", "", ayat(seg, a, b)).strip().rstrip(".")
+            entries = [one]
+        roads = []
+        for idx, e in enumerate(entries, 1):
+            matched = []
+            for s in streets(e):
+                for h in resolve(s):
+                    if h not in matched:
+                        matched.append(h)
+            seen = {osm[n] for n in matched}
+            if key == "tol":
+                badge = "Tol"
+            elif "motorway" in seen or "trunk" in seen:
+                badge = "Arteri"
+            else:
+                badge = "Kolektor"
+            roads.append({
+                "n": f"{label[0]}{idx}",
+                "name": e,
+                "matched": matched,
+                "badge": badge,
+            })
+        classes.append({
+            "key": key,
+            "label": label,
+            "pasal": f"Pasal 16 ayat ({a})",
+            "count": len(roads),
+            "roads": roads,
+        })
+        sys.stderr.write(f"  {label:20} {len(roads):>3} ruas\n")
+
+    total = sum(c["count"] for c in classes)
+    matched_names = sorted({m for c in classes for r in c["roads"] for m in r["matched"]})
+    sys.stderr.write(f"\nfetching geometry for {len(matched_names)} matched names...\n")
+    geom = fetch_geometry(matched_names)
+    sys.stderr.write(f"  got geometry for {len(geom)} names\n")
+
+    # Attach geometry and drop names that have none, so a selected road always
+    # has something to draw. A name can match a Perda ruas but have no way left
+    # after the second pass (deleted/retagged between queries), which would
+    # otherwise leave a row that highlights nothing.
+    drawable = 0
+    for c in classes:
+        for r in c["roads"]:
+            r["segments"] = [geom[n] for n in r["matched"] if n in geom]
+            r["matched"] = [n for n in r["matched"] if n in geom]
+            if r["segments"]:
+                drawable += 1
+            else:
+                # Nothing to highlight: say so rather than showing a dead row.
+                r["unlocatable"] = True
+        c["located"] = sum(1 for r in c["roads"] if r["segments"])
+    located = drawable
 
     payload = {
-        "source": "OpenStreetMap via Overpass API (ODbL)",
-        "statute": "UU No. 22 Tahun 2009 Pasal 25",
-        "spatial_plan": "Perda Kota Depok No. 9 Tahun 2022 (RTRW 2022-2042)",
-        "inferred": True,
+        "source": "Perda Kota Depok No. 9 Tahun 2022 (RTRW 2022-2042), Pasal 16",
+        "geometry": "OpenStreetMap via Overpass API (ODbL)",
+        "verbatim": True,
+        "total": total,
+        "located": located,
         "disclaimer": (
-            "Kelas jalan diinferensikan dari atribut OSM (ref), bukan tag resmi. "
-            "OSM tidak menyimpan kewenangan pengelola jalan. Kelas II, IV, V "
-            "tidak ditampilkan karena tidak dapat dibedakan dari data jalan."
+            "Daftar jalan ini disusun dari enumerasi ruas pada Pasal 16 Perda "
+            "Kota Depok No. 9 Tahun 2022, bukan dari tag OSM. Jalan lokal dan "
+            "jalan lingkungan tidak dimunculkan karena ayat (8) dan (9) "
+            "delegasikan keduanya ke Rencana Detail Tata Ruang yang belum "
+            "dipublikasikan."
         ),
-        "classes": [
-            {
-                **CLASS_META[k],
-                "count": len(by_kelas.get(k, [])),
-                "roads": sorted(by_kelas.get(k, []), key=lambda r: r["name"]),
-            }
-            for k in CLASS_ORDER
-        ],
+        "classes": classes,
     }
 
-    js = "window.DEPOK_ROADS=" + json.dumps(payload, separators=(",", ":"), ensure_ascii=False) + ";\n"
+    js = ("/* Generated by scripts/build-roads.py -- do not edit by hand.\n"
+          "   Perda Kota Depok No. 9 Tahun 2022, Pasal 16. */\n"
+          "window.DEPOK_ROADS=" + json.dumps(payload, separators=(",", ":"), ensure_ascii=False) + ";\n")
     OUT.write_text(js)
 
-    sys.stderr.write(f"\nwrote {OUT.relative_to(ROOT)}  {len(js) / 1024:.0f} KB\n")
-    for c in payload["classes"]:
-        sys.stderr.write(f"  Kelas {c['kelas']:4} {c['name']:22} {c['count']:>4} roads\n")
-    sys.stderr.write(f"  total {len(roads)} distinct named roads\n")
-
-    if not any(c["count"] for c in payload["classes"]):
-        raise SystemExit("ERROR: no roads resolved -- refusing to ship an empty list")
+    sys.stderr.write(
+        f"\nwrote {OUT.relative_to(ROOT)}  {len(js)/1024:.0f} KB\n"
+        f"  {total} ruas enumerated, {located} locatable in OSM, {total-located} not\n"
+    )
+    if not classes or total == 0:
+        raise SystemExit("ERROR: zero ruas parsed -- refusing to ship an empty list")
 
 
 if __name__ == "__main__":

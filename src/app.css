@@ -394,7 +394,47 @@ body {
   flex: none; font-size: 10.5px; font-weight: 700; color: var(--accent);
   font-variant-numeric: tabular-nums; min-width: 20px; text-align: right;
 }
+.road-row.is-dead { opacity: .5; }
+.road-row.is-dead .rr-name { font-style: italic; }
 .road-empty { padding: 10px 13px 12px 26px; font-size: 12px; color: var(--faint); }
+
+/* Selected-road banner, above the answer card. Inline rather than a toast, so it
+   stays put while you keep using the map. */
+.road-note-card {
+  position: absolute; z-index: 920;
+  left: max(18px, env(safe-area-inset-left));
+  bottom: calc(max(18px, env(safe-area-inset-bottom)) + var(--card-h, 0px));
+  max-width: 384px; width: calc(100vw - 36px);
+  display: flex; align-items: flex-start; gap: 9px;
+  padding: 10px 12px;
+  background: var(--surface);
+  -webkit-backdrop-filter: saturate(180%) blur(14px);
+  backdrop-filter: saturate(180%) blur(14px);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--road-c, #c2410c);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-1);
+}
+.road-note-card[hidden] { display: none; }
+.road-note-card .rnc-text { flex: 1; min-width: 0; }
+.road-note-card .rnc-klas {
+  display: block; font-size: 10px; font-weight: 700; letter-spacing: .07em;
+  text-transform: uppercase; color: var(--road-c, #c2410c); margin-bottom: 2px;
+}
+.road-note-card .rnc-name {
+  display: block; font-size: 13px; font-weight: 560; color: var(--ink);
+  line-height: 1.35;
+}
+.road-note-card .rnc-x {
+  flex: none; width: 22px; height: 22px; display: flex; align-items: center;
+  justify-content: center; color: var(--muted);
+  background: transparent; border: 0; border-radius: 5px; cursor: pointer;
+}
+.road-note-card .rnc-x:hover { color: var(--ink); background: var(--bg); }
+body.side-open .road-note-card { left: calc(max(12px, env(safe-area-inset-left)) + min(316px, calc(100vw - 24px)) + 12px); }
+@media (max-width: 760px) {
+  body.side-open .road-note-card { left: max(18px, env(safe-area-inset-left)); }
+}
 
 /* --- toggle --- */
 .side-toggle {

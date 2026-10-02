@@ -82,6 +82,19 @@
   </div>
 </aside>
 
+<!-- selected road banner --------------------------------------------- -->
+<div class="road-note-card" id="road-card" hidden>
+  <div class="rnc-text">
+    <span class="rnc-klas" id="road-card-klas"></span>
+    <span class="rnc-name" id="road-card-name"></span>
+  </div>
+  <button class="rnc-x" id="road-card-x" type="button" aria-label="Hapus pilihan jalan">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true">
+      <path d="M18 6L6 18M6 6l12 12"/>
+    </svg>
+  </button>
+</div>
+
 <!-- back ------------------------------------------------------------- -->
 <button id="back" class="back" type="button" hidden>
   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true">
@@ -108,7 +121,8 @@
   Boundaries © <a href="https://data.humdata.org/dataset/cod-ab-idn" rel="noopener">HDX/BPS</a> ·
   <a href="https://github.com/JfrAziz/indonesia-district" rel="noopener">indonesia-district</a> (CC BY-IGO, 2020) ·
   Map © <a href="https://www.openstreetmap.org/copyright" rel="noopener">OpenStreetMap</a> ·
-  <a href="https://openfreemap.org" rel="noopener">OpenFreeMap</a>
+  <a href="https://openfreemap.org" rel="noopener">OpenFreeMap</a> ·
+  Roads: <a href="https://jdih-dprd.depok.go.id/" rel="noopener">Perda Kota Depok No. 9/2022</a> Pasal 16
 </footer>
 
 <script src="/vendor/maplibre-gl.js"></script>

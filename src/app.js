@@ -60,10 +60,14 @@ const PALETTE = {
   light: {
     sel: '#1f6b48', selFill: '#1f6b48', peer: '#4f8f6d', peerFill: '#5c9a79',
     line: '#8a9a90', ink: '#2c3a31', halo: '#ffffff',
+    // Road highlight is deliberately outside the green admin family, so a
+    // selected road never reads as a selected kecamatan.
+    road: '#c2410c',
   },
   dark: {
     sel: '#6fd39b', selFill: '#6fd39b', peer: '#3f7f5c', peerFill: '#38745a',
     line: '#4a5a4e', ink: '#d8e6dc', halo: '#10130e',
+    road: '#fb923c',
   },
 };
 
@@ -85,6 +89,7 @@ map.addControl(new maplibregl.ScaleControl({ maxWidth: 110, unit: 'metric' }), '
 
 const SRC_KEC = 'kecamatan';
 const SRC_KEL = 'kelurahan';
+const SRC_ROAD = 'jalan';
 let mapReady = false;
 
 /**
@@ -138,6 +143,16 @@ function setForeignLayers(on) {
 function paint() {
   if (!mapReady) return;
   const p = PALETTE[state.theme];
+
+  // Road highlight first, and unconditionally. Both branches of this function
+  // return early, so anything added after them would only be themed on district
+  // changes and go stale on a theme toggle.
+  if (map.getLayer('road-sel')) {
+    map.setPaintProperty('road-sel', 'line-color', p.road);
+    map.setPaintProperty('road-sel-halo', 'line-color', p.road);
+    map.setPaintProperty('road-sel-label', 'text-halo-color', p.road);
+    map.setPaintProperty('road-sel-label', 'text-color', p.halo);
+  }
 
   if (state.view === 'city') {
     map.setPaintProperty('kec-fill', 'fill-color', p.peerFill);
@@ -284,6 +299,56 @@ function addLayers() {
       },
     });
   }
+  // The selected road (Perda 9/2022 Pasal 16). Separate from the admin layers so
+  // it survives a district change, and drawn in a colour no admin layer uses.
+  if (!map.getSource(SRC_ROAD)) {
+    map.addSource(SRC_ROAD, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+  }
+  if (!map.getLayer('road-sel')) {
+    map.addLayer({
+      id: 'road-sel', type: 'line', source: SRC_ROAD,
+      filter: ['==', ['get', 'role'], 'line'],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': PALETTE[state.theme].road,
+        'line-width': 4.5,
+        'line-opacity': 0.95,
+      },
+    });
+    // A wider translucent pass underneath reads as a glow, so the road stays
+    // findable against both the light and the dark basemap.
+    map.addLayer({
+      id: 'road-sel-halo', type: 'line', source: SRC_ROAD,
+      filter: ['==', ['get', 'role'], 'line'],
+      paint: {
+        'line-color': PALETTE[state.theme].road,
+        'line-width': 11,
+        'line-opacity': 0.22,
+        'line-blur': 3,
+      },
+    });
+    // Name the selected road ON the map, at the middle of its longest segment.
+    // Labelling the whole geometry would collide with itself on a long corridor.
+    if (!map.getLayer('road-sel-label')) {
+      map.addLayer({
+        id: 'road-sel-label', type: 'symbol', source: SRC_ROAD,
+        filter: ['==', ['get', 'role'], 'label'],
+        layout: {
+          'text-field': ['get', 'label'],
+          'text-size': 12,
+          'text-font': ['Noto Sans Regular'],
+          'text-anchor': 'center',
+          'symbol-placement': 'point',
+        },
+        paint: {
+          'text-color': PALETTE[state.theme].halo,
+          'text-halo-color': PALETTE[state.theme].road,
+          'text-halo-width': 2.6,
+          'text-halo-blur': 0.4,
+        },
+      });
+    }
+  }
   mapReady = true;
   paint();
 }
@@ -339,6 +404,7 @@ function goCity(opts = {}) {
   state.village = null;
   paint();
   renderCard();
+  positionRoadCard();
   renderBack();
   renderAreaList();
   if (opts.zoom !== false) {
@@ -376,6 +442,7 @@ function selectVillage(code, opts = {}) {
   state.view = 'kecamatan';
   paint();
   renderCard();
+  positionRoadCard();
   renderBack();
   renderAreaList();
   if (opts.zoom !== false) {
@@ -800,6 +867,15 @@ function restoreLayers() {
       return; // not ready yet; the poll tries again
     }
     renderCard();  // re-render without moving the camera
+    positionRoadCard();
+    // setStyle() drops the road source back to empty, so a selected road would
+    // silently vanish on a theme toggle. Re-push the same selection -- without
+    // re-fitting the camera, which would undo the user's own panning.
+    if (selectedRoad) {
+      // findRoad() returns {road, label}; roadFeatures() needs the road itself.
+      const hit = findRoad(selectedRoad);
+      if (hit.road) map.getSource(SRC_ROAD).setData(roadFeatures(hit.road));
+    }
     stop();
   };
 
@@ -898,6 +974,45 @@ const panelRoad = document.getElementById('panel-road');
 const areaList = document.getElementById('area-list');
 const roadGroups = document.getElementById('road-groups');
 const roadNote = document.getElementById('road-note');
+const roadCard = document.getElementById('road-card');
+const roadCardKlas = document.getElementById('road-card-klas');
+const roadCardName = document.getElementById('road-card-name');
+
+/** Show the selected road's Perda class + name in a persistent banner, and keep
+ *  it stacked above the answer card rather than on top of it. */
+function renderRoadCard(road, label) {
+  if (!road) {
+    roadCard.hidden = true;
+    return;
+  }
+  roadCardKlas.textContent = label;
+  roadCardName.textContent = road.name;
+  roadCard.style.setProperty('--road-c', PALETTE[state.theme].road);
+  roadCard.hidden = false;
+  positionRoadCard();
+}
+
+/** Stack the road banner directly above the answer card.
+ *
+ *  The gap is derived from the answer card's measured *top edge*, not its
+ *  height: the answer card is positioned from the top of the viewport, so on a
+ *  short phone screen its height and the space below it differ wildly. Offsetting
+ *  by height put the banner straight through the card at 430x932. Measuring the
+ *  top edge and subtracting from the viewport height is correct at any size.
+ *
+ *  Re-measured on resize and whenever the answer card re-renders, since both
+ *  change what it should sit on top of.
+ */
+function positionRoadCard() {
+  if (roadCard.hidden) return;
+  const cardEl = document.getElementById('card');
+  const gap = 12;
+  let offset = 0;
+  if (cardEl && !cardEl.hidden) {
+    offset = Math.max(0, window.innerHeight - cardEl.getBoundingClientRect().top) + gap;
+  }
+  roadCard.style.setProperty('--card-h', `${offset}px`);
+}
 
 function setSidebar(open) {
   sideEl.hidden = !open;
@@ -905,6 +1020,13 @@ function setSidebar(open) {
   document.body.classList.toggle('side-open', open);
   if (open) map.resize();
 }
+
+document.getElementById('road-card-x').addEventListener('click', () => highlightRoad(null));
+
+// The banner's offset depends on the answer card's position, which moves on
+// rotate and on viewport changes.
+window.addEventListener('resize', positionRoadCard);
+window.addEventListener('orientationchange', positionRoadCard);
 
 sideToggle.addEventListener('click', () => setSidebar(true));
 sideClose.addEventListener('click', () => setSidebar(false));
@@ -971,12 +1093,102 @@ function renderAreaList() {
 
 /* ---------- roads ---------- */
 const ROADS = window.DEPOK_ROADS || { classes: [] };
-// Which road classes are highlighted. Empty = show none; the basemap always draws.
-const activeRoadClasses = new Set();
-let selectedRoad = null;
 
-function roadKey(r) {
-  return `${r.name}||${r.ref}`;
+/** Which road is selected, by `key` (class key + ruas index). */
+let selectedRoad = null;
+/** Which road classes are expanded in the list. */
+const roadOpen = new Set();
+
+/** Build the GeoJSON for one ruas: its line segments, plus one labelled point
+ *  at the midpoint of its longest segment.
+ *
+ *  The label is a separate Point feature rather than a symbol layer reading the
+ *  line, because MapLibre symbol layers need point (or polygon) geometry —
+ *  labelling a LineString with symbol-placement:'point' silently renders
+ *  nothing. Labelling every segment would overlap on a corridor that crosses
+ *  the city, so only the longest gets a name. */
+function roadFeatures(road) {
+  const out = [];
+  const segs = road.segments || [];
+  let longest = -1;
+  let mid = null;
+  segs.forEach((s, i) => {
+    out.push({
+      type: 'Feature',
+      properties: { role: 'line', name: s.class },
+      geometry: { type: 'LineString', coordinates: s.coords },
+    });
+    if (s.coords.length > longest) {
+      longest = s.coords.length;
+      const m = s.coords[Math.floor(s.coords.length / 2)];
+      mid = m;
+    }
+  });
+  if (mid) {
+    out.push({
+      type: 'Feature',
+      properties: { role: 'label', label: road.name },
+      geometry: { type: 'Point', coordinates: mid },
+    });
+  }
+  return { type: 'FeatureCollection', features: out };
+}
+
+function roadBounds(road) {
+  let minx = 180, miny = 90, maxx = -180, maxy = -90;
+  for (const s of road.segments || []) {
+    for (const [x, y] of s.coords) {
+      if (x < minx) minx = x;
+      if (x > maxx) maxx = x;
+      if (y < miny) miny = y;
+      if (y > maxy) maxy = y;
+    }
+  }
+  if (minx > maxx) return null;
+  return [[minx, miny], [maxx, maxy]];
+}
+
+/** Find a ruas by `classKey::n`, with its class label. */
+function findRoad(key) {
+  for (const c of ROADS.classes) {
+    for (const r of c.roads) {
+      if (`${c.key}::${r.n}` === key) return { road: r, label: c.label };
+    }
+  }
+  return { road: null, label: '' };
+}
+
+/** Draw the selected road and zoom to it. */
+function highlightRoad(key) {
+  selectedRoad = key;
+  // SRC_ROAD, not 'road-sel': that is the layer id. getSource() on a layer name
+  // returns undefined, so the guard below used to bail out on every click and
+  // the selection silently did nothing.
+  if (!map.getSource(SRC_ROAD)) return;
+  let road = null;
+  let label = '';
+  if (key) {
+    const hit = findRoad(key);
+    road = hit.road;
+    label = hit.label;
+  }
+  if (!road || !road.segments || !road.segments.length) {
+    map.getSource(SRC_ROAD).setData({ type: 'FeatureCollection', features: [] });
+    renderRoadCard(null);
+    renderRoads();  // clears the .is-on row left behind by the X button
+    return;
+  }
+  map.getSource(SRC_ROAD).setData(roadFeatures(road));
+  const b = roadBounds(road);
+  if (b) {
+    map.fitBounds(b, {
+      padding: { top: 120, bottom: 220, left: 80, right: 80 },
+      maxZoom: 15.5,
+      duration: 800,
+    });
+  }
+  renderRoadCard(road, label);
+  renderRoads();
 }
 
 function renderRoads() {
@@ -984,33 +1196,34 @@ function renderRoads() {
     roadGroups.innerHTML = `<p class="road-empty">Data jalan tidak tersedia.</p>`;
     return;
   }
+  const unloc = ROADS.total - ROADS.located;
   roadNote.innerHTML =
-    `Kelas jalan <b>${esc(ROADS.statute)}</b> — diinferensikan dari atribut OSM, `
-    + `bukan tag resmi. OSM tidak menyimpan kewenangan pengelola jalan. `
-    + `Kelas II, IV, V tidak ditampilkan karena tidak dapat dibedakan.`;
+    `Dari <b>${esc(ROADS.source)}</b> — ${ROADS.total} ruas. `
+    + `Jalan lokal &amp; lingkungan tidak dimunculkan: ayat (8) dan (9) `
+    + `mendelegasikannya ke Rencana Detail Tata Ruang yang belum dipublikasikan.`
+    + (unloc ? ` ${unloc} ruas tidak ada di OSM, jadi tidak bisa ditampilkan di peta.` : '');
 
   let html = '';
   for (const c of ROADS.classes) {
-    const key = `k${c.kelas}`;
-    const open = activeRoadClasses.has(key);
-    html += `<div class="road-group${open ? ' is-open' : ''}" data-key="${key}">
-      <button class="road-head" type="button" role="button" aria-expanded="${open}">
+    const key = `k${c.key}`;
+    const open = roadOpen.has(c.key);
+    html += `<div class="road-group${open ? ' is-open' : ''}" data-key="${esc(c.key)}">
+      <button class="road-head" type="button" aria-expanded="${open}">
         <span class="road-chev">▶</span>
-        <span class="road-title">Kelas ${esc(c.kelas)} · ${esc(c.name)}</span>
-        <span class="road-basis" data-conf="${esc(c.confidence)}">${esc(c.basis)}</span>
+        <span class="road-title">${esc(c.label)}</span>
+        <span class="road-basis">${esc(c.pasal)}</span>
         <span class="road-count">${c.count}</span>
       </button>
       <div class="road-body">`;
-    if (!c.roads.length) {
-      html += `<p class="road-empty">Tidak ada jalan.</p>`;
-    }
     for (const r of c.roads) {
-      const k = roadKey(r);
-      html += `<button class="road-row${selectedRoad === k ? ' is-on' : ''}" type="button"
-        data-key="${esc(k)}" data-name="${esc(r.name)}">
+      const k = `${c.key}::${r.n}`;
+      const isOn = selectedRoad === k;
+      const dead = !r.segments || !r.segments.length;
+      html += `<button class="road-row${isOn ? ' is-on' : ''}${dead ? ' is-dead' : ''}" type="button"
+        data-key="${esc(k)}" data-name="${esc(r.name)}"
+        aria-pressed="${isOn}"${dead ? ' disabled title="Ruas ini tidak ada di OSM, jadi tidak bisa digambar di peta"' : ''}>
         <span class="rr-name">${esc(r.name)}</span>
-        <span class="rr-badge">${esc(r.osm_label)}</span>
-        ${r.ref ? `<span class="rr-ref">${esc(r.ref)}</span>` : ''}
+        <span class="rr-badge">${esc(r.badge)}</span>
       </button>`;
     }
     html += `</div></div>`;
@@ -1024,14 +1237,18 @@ function renderRoads() {
       const nowOpen = !g.classList.contains('is-open');
       g.classList.toggle('is-open', nowOpen);
       head.setAttribute('aria-expanded', String(nowOpen));
-      if (nowOpen) activeRoadClasses.add(key);
-      else activeRoadClasses.delete(key);
+      if (nowOpen) roadOpen.add(key); else roadOpen.delete(key);
     });
   }
   for (const row of roadGroups.querySelectorAll('.road-row')) {
     row.addEventListener('click', () => {
-      selectedRoad = selectedRoad === row.dataset.key ? null : row.dataset.key;
-      renderRoads();
+      // A ruas with no geometry cannot be drawn. Ignore the click instead of
+      // running highlightRoad(null), which would wipe out an unrelated road the
+      // user already had selected.
+      if (row.classList.contains('is-dead')) return;
+      const k = row.dataset.key;
+      // Clicking the active road clears it, so there is always a way back.
+      highlightRoad(selectedRoad === k ? null : k);
       if (window.matchMedia('(max-width: 760px)').matches) setSidebar(false);
     });
   }

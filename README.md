@@ -99,7 +99,7 @@ shots/                screenshots (gitignored)
 python3 scripts/build-data.py       # 63 kelurahan  -> public/data/
 python3 scripts/build-districts.py  # 11 kecamatan  -> public/data/
 python3 scripts/bundle-data.py      # both          -> src/data.js
-python3 scripts/build-roads.py      # 350 jalan     -> src/roads.js  (Overpass)
+python3 scripts/build-roads.py      # 77 ruas      -> src/roads.js  (Overpass)
 ```
 
 The first three pull from
@@ -124,31 +124,68 @@ by a kelurahan must exist in the kecamatan set, and each district must be a
 valid single-ring geometry — or the build fails. An undissolved build cannot
 ship.
 
-## Road classes are inferred, and the app says so
+## Roads come from the city's own planning law
 
-`build-roads.py` pulls named arterial roads for Kota Depok from Overpass (ODbL)
-and groups them by **UU 22/2009 Pasal 25**, which classes roads by
-*administrative authority*: I Nasional, II Provinsi, III Kabupaten/Kota,
-IV Desa, V Lingkungan.
+The road list is **Perda Kota Depok No. 9 Tahun 2022** (RTRW Kota Depok
+2022–2042), **Pasal 16**, read straight out of the enacted text. That is the
+binding local regulation and it enumerates the network explicitly:
 
-**OSM does not record who maintains a road.** There is no authority tag in the
-schema, so this is not a lookup — any static table would be a guess dressed as
-data. The one reliable signal is `ref`: Indonesian national routes carry a bare
-integer route number, and a numbered national route is Jalan Nasional by
-definition. So `ref.isdigit()` → Kelas I, everything else → Kelas III.
+| Pasal 16 ayat | Class | Ruas |
+|---|---|---|
+| (3) | Arteri Primer | 1 |
+| (4) | Arteri Sekunder | 14 |
+| (6) | Kolektor Primer | 18 |
+| (7) | Kolektor Sekunder | 38 |
+| (10) | Jalan Tol | 6 |
+| | **Total** | **77** |
 
-- **Kelas I** (17 roads, high confidence) — refs 2, 12, 17. Jalan Raya Bogor,
-  Jalan Tol DBA, RE Martadinata, and so on.
-- **Kelas III** (333 roads, low confidence) — everything else.
+The class names, the grouping, and the names in each row are the Perda's own
+text — nothing is derived from OSM tags. Ayat (1)–(2) define the hierarchy
+(`jalan umum` = arteri / kolektor / lokal / lingkungan; arteri = primer /
+sekunder) and are why the groups are nested the way they are.
 
-**Kelas II, IV and V are not shown.** That is not a claim they are empty —
-nothing here proves their absence, we just cannot separate a provincial road from
-a city road without the tag. The UI states this rather than implying a survey.
+**Jalan lokal and jalan lingkungan are deliberately absent.** Ayat (8) and (9)
+defer both to the Rencana Detail Tata Ruang, a separate document that is not
+published. So this is a gap in the *source*, and the UI says so rather than
+inventing two empty groups or quietly dropping them.
 
-Perda Kota Depok No. 9 Tahun 2022 (RTRW 2022–2042) is cited as the governing
-spatial plan, but a Perda is a planning instrument: it does not tag OSM ways and
-its classification is not machine-readable from street data, so it is context,
-not a source of classes.
+### OSM is used only to draw, never to classify
+
+The Perda gives a name; OpenStreetMap gives it coordinates. That's the whole
+division of labour, and it matters:
+
+- **Matching is approximate.** A "ruas" often spans several streets —
+  `Ruas Jalan Merawan – Jalan Cinere Raya – Jalan Limo Raya – Jalan Meruyung
+  Raya` is four OSM ways. And the Perda abbreviates where OSM spells out:
+  `Jalan Ir. H. Juanda` ↔ `Jalan Insinyur Haji Juanda`. The build normalises
+  prefixes and honorifics before matching.
+- **The bbox is wider than Depok on purpose.** Pasal 16 enumerates corridors
+  that leave the city (`Cibinong-Cimpaeun`, `Tole Iskandar-Pondok Rajeg` to the
+  Bogor border). A Depok-only bbox matches 34/77; the wide one matches 72/77.
+- **3 of 77 have no OSM counterpart** (`Ruas Jalan Cibinong-Cimpaeun`, `Jalan
+  Akses Kota Kembang Raya`, `Jalan Sukatani Permai`). They stay in the list at
+  full size, marked *not locatable*, and are non-interactive rather than
+  silently absent — a regulation that lists 77 roads should show 77 rows.
+
+The previous build used UU 22/2009 Pasal 25 (authority classes: Nasional /
+Provinsi / Kabupaten-Kota / Desa / Lingkungan). That was abandoned because OSM
+records no road-maintenance authority, so 333 of the 350 rows were a guess
+disguised as a class. The Perda gives real, citable classes.
+
+### Regenerating
+
+```bash
+python3 scripts/build-roads.py   # 77 ruas -> src/roads.js
+```
+
+Overpass is rate-limited and 504s under load — a single wide query times out
+every time, and the tiled queries take 3–6 minutes with retries — so responses
+are cached to `/tmp/depok-roads-cache.*` for a day. Re-running is instant from
+cache; delete the files to force a refetch.
+
+`scripts/` is pruned on Cloudflare Pages, so `src/roads.js` is committed — same
+as `src/data.js`. The build needs no Python packages beyond the standard
+library (the district scripts need Shapely; the road script does not).
 
 ## Data
 
