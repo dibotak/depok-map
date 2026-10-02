@@ -16,45 +16,51 @@
 
 <div id="map" role="application" aria-label="Peta wilayah Kota Depok"></div>
 
-<!-- search ------------------------------------------------------------ -->
-<div class="search" id="search">
-  <div class="search-box">
-    <svg class="i-search" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-      <circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/>
+<!-- top bar: sidebar toggle + search, on one level -------------------- -->
+<div class="topbar">
+  <button id="side-toggle" class="side-toggle" type="button" aria-expanded="false"
+          aria-controls="sidebar" aria-label="Buka daftar wilayah dan jalan">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
+      <path d="M4 6h16M4 12h16M4 18h10"/>
     </svg>
-    <input id="q" type="search" autocomplete="off" spellcheck="false"
-           placeholder="Cari kecamatan atau kelurahan…"
-           aria-label="Cari kelurahan atau kecamatan di Kota Depok"
-           aria-expanded="false" aria-controls="results" role="combobox"
-           aria-autocomplete="list">
-    <button id="clear" class="clear" type="button" aria-label="Hapus pencarian" hidden>
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
-        <path d="M6 6l12 12M18 6L6 18"/>
+    <span>Daftar</span>
+  </button>
+
+  <div class="search" id="search">
+    <div class="search-box">
+      <svg class="i-search" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/>
       </svg>
-    </button>
-    <button id="theme" class="theme" type="button" aria-label="Ganti tema" title="Ganti tema terang/gelap">
-      <svg class="i-sun" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-        <circle cx="12" cy="12" r="4.2"/>
-        <path d="M12 2.6v2.2M12 19.2v2.2M2.6 12h2.2M19.2 12h2.2M5.4 5.4l1.6 1.6M17 17l1.6 1.6M18.6 5.4L17 7M7 17l-1.6 1.6"/>
-      </svg>
-      <svg class="i-moon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-        <path d="M20 14.2A8.4 8.4 0 0 1 9.8 4 8.4 8.4 0 1 0 20 14.2z"/>
-      </svg>
-    </button>
+      <input id="q" type="search" autocomplete="off" spellcheck="false"
+             placeholder="Cari kecamatan atau kelurahan…"
+             aria-label="Cari kelurahan atau kecamatan di Kota Depok"
+             aria-expanded="false" aria-controls="results" role="combobox"
+             aria-autocomplete="list">
+      <button id="clear" class="clear" type="button" aria-label="Hapus pencarian" hidden>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
+          <path d="M6 6l12 12M18 6L6 18"/>
+        </svg>
+      </button>
+      <button id="theme" class="theme" type="button" aria-label="Ganti tema" title="Ganti tema terang/gelap">
+        <svg class="i-sun" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <circle cx="12" cy="12" r="4.2"/>
+          <path d="M12 2.6v2.2M12 19.2v2.2M2.6 12h2.2M19.2 12h2.2M5.4 5.4l1.6 1.6M17 17l1.6 1.6M18.6 5.4L17 7M7 17l-1.6 1.6"/>
+        </svg>
+        <svg class="i-moon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path d="M20 14.2A8.4 8.4 0 0 1 9.8 4 8.4 8.4 0 1 0 20 14.2z"/>
+        </svg>
+      </button>
+    </div>
+    <p class="search-meta" id="search-meta">11 kecamatan · 63 kelurahan · Kota Depok</p>
+    <ul class="results" id="results" role="listbox" aria-label="Hasil pencarian" hidden></ul>
   </div>
-  <p class="search-meta" id="search-meta">11 kecamatan · 63 kelurahan · Kota Depok</p>
-  <ul class="results" id="results" role="listbox" aria-label="Hasil pencarian" hidden></ul>
+
+  <!-- Balances the toggle so the search box stays centred on the viewport.
+       Kept as an element (not a CSS spacer) so the grid has a third track. -->
+  <div class="topbar-tail" aria-hidden="true"></div>
 </div>
 
 <!-- sidebar ------------------------------------------------------------ -->
-<button id="side-toggle" class="side-toggle" type="button" aria-expanded="false"
-        aria-controls="sidebar" aria-label="Buka daftar wilayah dan jalan">
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
-    <path d="M4 6h16M4 12h16M4 18h10"/>
-  </svg>
-  <span>Daftar</span>
-</button>
-
 <aside class="sidebar" id="sidebar" aria-label="Daftar wilayah dan jalan">
   <div class="side-head">
     <div class="side-tabs" role="tablist">
@@ -63,6 +69,13 @@
       <button class="side-tab" id="tab-road" role="tab" aria-selected="false"
               aria-controls="panel-road" type="button">Jalan</button>
     </div>
+    <button class="side-min" id="side-min" type="button" aria-expanded="true"
+            aria-controls="panel-area" aria-label="Perkecil daftar" title="Perkecil daftar">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M6 9l6 6 6-6"/>
+      </svg>
+    </button>
     <button class="side-close" id="side-close" type="button" aria-label="Tutup daftar">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
         <path d="M18 6L6 18M6 6l12 12"/>
@@ -77,8 +90,17 @@
 
   <!-- roads -->
   <div class="side-panel" id="panel-road" role="tabpanel" aria-labelledby="tab-road" hidden>
-    <p class="side-note" id="road-note"></p>
-    <div id="road-groups"></div>
+    <!-- One scroll container holding both the note and the groups. Two things
+         depend on this being a single scroller: the 77 ruas need somewhere to
+         scroll (as a direct child of .side-panel they were clipped by the
+         panel's overflow:hidden), and the note's `position: sticky` only works
+         when it has a scrolling ancestor. roadGroups is rendered into by JS and
+         must not be the scroller itself, or that innerHTML write would delete
+         the sticky note. -->
+    <div class="side-scroll" id="road-scroll">
+      <p class="side-note" id="road-note"></p>
+      <div id="road-groups"></div>
+    </div>
   </div>
 </aside>
 

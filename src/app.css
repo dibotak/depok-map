@@ -94,11 +94,36 @@ body {
 .skip:focus { top: 8px; }
 
 /* ---------- search ---------- */
-.search {
+/* Top bar: the sidebar toggle sits beside the search box on the same level.
+   A 3-column grid (toggle | search | tail) keeps the search centred on the
+   viewport while the toggle occupies the left -- the tail mirrors the toggle's
+   width so the middle column stays visually centred. Previously the toggle was
+   absolutely positioned at top-left and the search was independently centred,
+   which put them on the same line by accident and made the back button below
+   the search collide with it at 721-1024px. */
+.topbar {
   position: absolute; z-index: 1000;
-  top: max(16px, env(safe-area-inset-top)); left: 50%;
-  transform: translateX(-50%);
-  width: min(520px, calc(100vw - 32px));
+  top: max(16px, env(safe-area-inset-top));
+  left: max(18px, env(safe-area-inset-left));
+  right: max(18px, env(safe-area-inset-right));
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+  pointer-events: none; /* the bar itself must not eat map drags */
+}
+.topbar > * { pointer-events: auto; }
+/* Both the toggle and the tail take the SAME fixed width, so the search stays
+   centred on the viewport no matter how wide the toggle's label gets.
+   Without this the search visibly jumps sideways each time the label changes
+   between "Daftar" / "Tutup" / "Buka" -- the label is not monospaced and its
+   width differs per word, which was enough to shift the centre column. */
+.topbar-tail, .side-toggle { width: 98px; }
+
+.search {
+  justify-self: center;
+  width: min(520px, 100%);
+  min-width: 0;
 }
 .search-box {
   display: flex; align-items: center; gap: 10px;
@@ -259,7 +284,9 @@ body {
    map is padded to match via VIEW_PADDING.left so nothing sits under the panel. */
 .sidebar {
   position: absolute; z-index: 1100;
-  top: max(12px, env(safe-area-inset-top));
+  /* Clears the top bar: 16px inset + 46px row + 12px gap. The panel previously
+     started at 12px and ran under the search box and toggle. */
+  top: calc(max(16px, env(safe-area-inset-top)) + 58px);
   bottom: max(12px, env(safe-area-inset-bottom));
   left: max(12px, env(safe-area-inset-left));
   width: min(316px, calc(100vw - 24px));
@@ -305,9 +332,35 @@ body {
 
 .side-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .side-panel[hidden] { display: none; }
-.side-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
-
+/* The scroll container for BOTH panels. Previously only the area list had it,
+   so the 77-row road list overflowed and was silently clipped by the panel's
+   overflow:hidden -- the bottom rows were unreachable, on any device.
+   -webkit-overflow-scrolling + touch-action matter on iOS, where a scroll
+   region inside a transformed/positioned overlay otherwise rubber-bands the
+   whole page instead of the list. */
+.side-scroll {
+  flex: 1; min-height: 0;
+  overflow-y: auto; overflow-x: hidden;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  /* Room for the scrollbar so text never sits under it on desktop. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+.side-scroll::-webkit-scrollbar { width: 9px; }
+.side-scroll::-webkit-scrollbar-track { background: transparent; }
+.side-scroll::-webkit-scrollbar-thumb {
+  background: var(--border-strong); border-radius: 999px;
+  border: 3px solid transparent; background-clip: content-box;
+}
+.side-scroll::-webkit-scrollbar-thumb:hover { background-clip: content-box; background-color: var(--faint); }
+/* The note is sticky so the source citation stays visible while scrolling the
+   77 ruas. This only works because it lives INSIDE the .side-scroll container
+   (see index.html) -- sticky positions against the nearest scrolling ancestor,
+   so as a sibling of the scroller it never stuck at all. */
 .side-note {
+  position: sticky; top: 0; z-index: 2;
   margin: 0; padding: 9px 13px;
   font-size: 11.5px; line-height: 1.45; color: var(--muted);
   background: var(--bg);
@@ -437,13 +490,15 @@ body.side-open .road-note-card { left: calc(max(12px, env(safe-area-inset-left))
 }
 
 /* --- toggle --- */
+/* Now a grid item of .topbar rather than absolutely positioned, which is what
+   puts it on the same level as the search box. Height matches .search-box (46px)
+   so the two read as one row. */
 .side-toggle {
-  position: absolute; z-index: 1050;
-  left: max(18px, env(safe-area-inset-left));
-  top: max(20px, env(safe-area-inset-top));
   display: flex; align-items: center; gap: 7px;
-  height: 34px; padding: 0 13px 0 10px;
+  height: 46px; padding: 0 8px;
+  justify-content: center;
   font: inherit; font-size: 13px; font-weight: 560; color: var(--ink-2);
+  white-space: nowrap;
   background: var(--surface);
   -webkit-backdrop-filter: saturate(180%) blur(14px);
   backdrop-filter: saturate(180%) blur(14px);
@@ -454,7 +509,32 @@ body.side-open .road-note-card { left: calc(max(12px, env(safe-area-inset-left))
   transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease);
 }
 .side-toggle:hover { color: var(--ink); border-color: var(--border-strong); }
+/* When the panel is open the toggle becomes the panel's own minimise/restore
+   control rather than disappearing, so the left-hand slot never changes width
+   and the search box cannot jump sideways on every open/close. */
 .side-toggle[hidden] { display: none; }
+body.side-open .side-toggle {
+  border-color: var(--border-strong);
+  color: var(--ink);
+  background: var(--bg);
+}
+
+/* --- minimise --- */
+/* Collapses the panel body to just the tab row, so the map stays visible while
+   the list is still one click away. Distinct from close, which hides the panel. */
+.side-min {
+  flex: none; width: 30px; height: 30px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--muted); background: transparent;
+  border: 1px solid transparent; border-radius: 7px; cursor: pointer;
+  transition: color var(--dur) var(--ease), transform var(--dur) var(--ease);
+}
+.side-min:hover { color: var(--ink); border-color: var(--border); }
+.side-min svg { transition: transform var(--dur) var(--ease); }
+body.side-min .side-min svg { transform: rotate(180deg); }
+/* Minimised: keep the header, drop the body. */
+body.side-min .side-panel { display: none; }
+body.side-min .sidebar { bottom: auto; height: auto; }
 
 /* Layout shift while the sidebar is open.
    Only .back and .card move. The search box is centred with translateX(-50%),
@@ -466,7 +546,6 @@ body.side-open .back,
 body.side-open .card {
   left: calc(max(12px, env(safe-area-inset-left)) + min(316px, calc(100vw - 24px)) + 12px);
 }
-body.side-open .side-toggle { display: none; }
 
 @media (max-width: 760px) {
   /* The panel is full-width and overlays the map, so there is nothing to sit
@@ -477,13 +556,32 @@ body.side-open .side-toggle { display: none; }
   body.side-open .card { left: max(12px, env(safe-area-inset-left)); }
 }
 
+/* On a phone the panel has to be shorter than the viewport or the list cannot
+   be scrolled at all: top + height must clear the top bar above and the
+   attribution below. 78dvh leaves room for both and leaves a visible strip of
+   map, so the user can tell the panel is an overlay and not the whole screen. */
+@media (max-width: 760px) {
+  .sidebar {
+    top: calc(max(10px, env(safe-area-inset-top)) + 56px);
+    /* bottom unset: a fixed height is what makes the inner list scrollable. */
+    bottom: auto;
+    height: min(78dvh, calc(100dvh - 150px));
+    /* Fallback for browsers without dvh (older Safari): vh is wrong when the
+       URL bar shows, but it is better than no height at all. */
+    max-height: calc(100vh - 150px);
+  }
+  body.side-min .sidebar { height: auto; }
+  /* Match the 44px search box so the top row stays one level. */
+  .side-toggle { height: 44px; }
+  /* Taller tap targets on touch. */
+  .side-tab, .side-min, .side-close { height: 34px; }
+  .side-row { padding: 10px 13px; }
+  .road-head { padding: 11px 13px; }
+}
+
 .back {
   position: absolute; z-index: 950;
   left: max(18px, env(safe-area-inset-left));
-  /* Sits below the search box. Measured: at <=1024px the centred 520px search
-     box reaches x=190..710, so a back button at x=18..199 overlaps it. Below
-     1024px there is no room beside it, so it drops underneath instead. */
-  top: calc(max(16px, env(safe-area-inset-top)) + 62px);
   display: flex; align-items: center; gap: 6px;
   height: 34px; padding: 0 14px 0 10px;
   font: inherit; font-size: 13px; font-weight: 560; color: var(--ink-2);
@@ -499,16 +597,12 @@ body.side-open .side-toggle { display: none; }
 .back:hover { color: var(--ink); border-color: var(--border-strong); }
 .back[hidden] { display: none; }
 
-/* Closed state: the sidebar toggle owns the top-left corner, so the back button
-   starts to its right instead of underneath it (~92px wide + 14px gap). Above
-   760px the two sit side by side; below that the panel is full-width and the
-   back button drops below the search box as it already did. */
-@media (min-width: 761px) {
-  .back { left: max(120px, calc(env(safe-area-inset-left) + 120px)); }
-}
-
-@media (min-width: 1025px) {
-  .back { top: max(20px, env(safe-area-inset-top)); }
+/* The back button sits below the top bar. It cannot share the top row any more:
+   that row is the toggle + search grid, and there is no free third slot at
+   721-1024px where the search box is already 520px wide. Below the row is clear
+   at every width, and it only appears from kecamatan level onward. */
+.back {
+  top: calc(max(16px, env(safe-area-inset-top)) + 58px);
 }
 
 /* Between 721px and 1024px the search box is still centred and its
@@ -570,7 +664,11 @@ body.side-open .side-toggle { display: none; }
 
 /* ---------- mobile ---------- */
 @media (max-width: 720px) {
-  .search { top: max(10px, env(safe-area-inset-top)); width: calc(100vw - 20px); }
+  /* The top bar owns the inset and the search just fills its grid column.
+     The old `width: calc(100vw - 20px)` overrode the column width and made the
+     search box overlap the toggle at 430px. */
+  .topbar { top: max(10px, env(safe-area-inset-top)); gap: 8px; }
+  .search { width: 100%; }
   .search-box { height: 44px; padding-left: 12px; }
   #q { font-size: 16px; /* 16px avoids iOS Safari's focus-zoom */ }
   .search-meta { font-size: 11px; }

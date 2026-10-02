@@ -45,10 +45,20 @@ would 404 every asset — use `map.dibotak.com`, not a subpath.
 
 ## What it does
 
-- **Sidebar with two tabs.** *Wilayah* lists all 11 kecamatan with their child
+- **Sidebar with two tabs**, toggled by the **Daftar** button sitting beside the
+  search bar on the same row. *Wilayah* lists all 11 kecamatan with their child
   counts; opening one appends its kelurahan underneath, and the current
-  selection stays highlighted as you click through the map. *Jalan* lists 350
-  named roads grouped by class, collapsible. Collapsible panel, `Esc` to close.
+  selection stays highlighted as you click through the map. *Jalan* lists the
+  77 official ruas grouped by class, collapsible.
+- **Two ways to shrink the panel.** The chevron in the sidebar header
+  **minimises** it — the tab row stays, the list goes, and the map is clear
+  behind it. `✕` closes it entirely; `Esc` backs out one level at a time
+  (restore, then close). The Daftar button doubles as collapse/restore while
+  the panel is open, so the top row's layout never changes width.
+- **Both lists scroll independently.** Each panel is its own scroll container,
+  so the 77 ruas and the 11+7 area rows are both fully reachable — including on
+  a phone, where the panel is capped at 78dvh so a strip of map always shows
+  underneath. The OSM source note sticks to the top of the road list.
 - **Drill down one level at a time.** City view shows the 11 kecamatan
   boundaries, each labelled, and no kelurahan at all. Click one to zoom in: that
   kecamatan's kelurahan appear and are labelled, while the other 10 stay plain

@@ -973,6 +973,7 @@ const panelArea = document.getElementById('panel-area');
 const panelRoad = document.getElementById('panel-road');
 const areaList = document.getElementById('area-list');
 const roadGroups = document.getElementById('road-groups');
+const roadScroll = document.getElementById('road-scroll');
 const roadNote = document.getElementById('road-note');
 const roadCard = document.getElementById('road-card');
 const roadCardKlas = document.getElementById('road-card-klas');
@@ -1014,11 +1015,44 @@ function positionRoadCard() {
   roadCard.style.setProperty('--card-h', `${offset}px`);
 }
 
+const sideMin = document.getElementById('side-min');
+
 function setSidebar(open) {
   sideEl.hidden = !open;
-  sideToggle.setAttribute('aria-expanded', String(open));
   document.body.classList.toggle('side-open', open);
-  if (open) map.resize();
+  if (open) {
+    // Opening always shows the list. A panel that came back still minimised
+    // reads as broken, and the header alone gives no hint it can be expanded.
+    setMinimize(false);
+    map.resize();
+    // Focus the panel so keyboard users land inside it rather than behind it.
+    const first = sideEl.querySelector('.side-tab.is-on');
+    if (first) first.focus({ preventScroll: true });
+  }
+  syncToggle();
+}
+
+/** Minimise/restore the panel body, leaving the tab row visible. */
+function setMinimize(on) {
+  document.body.classList.toggle('side-min', on);
+  sideMin.setAttribute('aria-expanded', String(!on));
+  sideMin.setAttribute('aria-label', on ? 'Perluas daftar' : 'Perkecil daftar');
+  sideMin.title = on ? 'Perluas daftar' : 'Perkecil daftar';
+  syncToggle();
+}
+
+/** The left slot holds one button that means different things depending on the
+ *  panel state: "open the list" when closed, "collapse the panel" when open.
+ *  Keeping one element (rather than hiding it) stops the top bar's grid from
+ *  changing width and shifting the centred search box on every toggle. */
+function syncToggle() {
+  const open = !sideEl.hidden;
+  const min = document.body.classList.contains('side-min');
+  const label = open ? (min ? 'Perluas daftar' : 'Perkecil daftar') : 'Buka daftar wilayah dan jalan';
+  sideToggle.setAttribute('aria-label', label);
+  sideToggle.title = label;
+  sideToggle.setAttribute('aria-expanded', String(open && !min));
+  sideToggle.querySelector('span').textContent = open ? (min ? 'Buka' : 'Tutup') : 'Daftar';
 }
 
 document.getElementById('road-card-x').addEventListener('click', () => highlightRoad(null));
@@ -1028,10 +1062,21 @@ document.getElementById('road-card-x').addEventListener('click', () => highlight
 window.addEventListener('resize', positionRoadCard);
 window.addEventListener('orientationchange', positionRoadCard);
 
-sideToggle.addEventListener('click', () => setSidebar(true));
+// One button, two jobs: opens the panel when closed, minimises it when open.
+sideToggle.addEventListener('click', () => {
+  if (sideEl.hidden) return setSidebar(true);
+  setMinimize(!document.body.classList.contains('side-min'));
+});
+sideMin.addEventListener('click', () => {
+  setMinimize(!document.body.classList.contains('side-min'));
+});
 sideClose.addEventListener('click', () => setSidebar(false));
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && !sideEl.hidden) setSidebar(false);
+  if (e.key !== 'Escape' || sideEl.hidden) return;
+  // Escape backs out one level at a time: restore a minimised panel first,
+  // then close it. Closing outright would skip the state the user just made.
+  if (document.body.classList.contains('side-min')) setMinimize(false);
+  else setSidebar(false);
 });
 
 function setTab(which) {
@@ -1079,7 +1124,12 @@ function renderAreaList() {
     }
   }
 
+  // Preserve scroll across a re-render. innerHTML replacement resets
+  // scrollTop to 0, so on a phone tapping a kecamatan threw the list back to the
+  // top and the row you just pressed moved under your thumb.
+  const keepScroll = areaList.scrollTop;
   areaList.innerHTML = html;
+  areaList.scrollTop = keepScroll;
   for (const el of areaList.querySelectorAll('.side-row')) {
     el.addEventListener('click', () => {
       if (el.dataset.kind === 'kec') openDistrict(el.dataset.code);
@@ -1228,7 +1278,12 @@ function renderRoads() {
     }
     html += `</div></div>`;
   }
+  // Preserve scroll across the re-render: replacing innerHTML resets scrollTop
+  // to 0, which threw the list back to the top on every selection change.
+  // roadScroll is the scroller; roadGroups is only its content.
+  const keepScroll = roadScroll.scrollTop;
   roadGroups.innerHTML = html;
+  roadScroll.scrollTop = keepScroll;
 
   for (const head of roadGroups.querySelectorAll('.road-head')) {
     head.addEventListener('click', () => {
