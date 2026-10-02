@@ -294,9 +294,16 @@ def build_angkot():
         sys.stderr.write("\nangkot skipped (no endpoint nodes; run probe-endpoints.py)\n")
         return []
 
+    # Second pass over street names, appended after the place/POI nodes so an
+    # exact place match always wins over a street-name approximation.
+    road_nodes = nodes_from_roads()
+    if road_nodes:
+        sys.stderr.write("\nroad-name fallback nodes: %d\n" % len(road_nodes))
+    pool = nodes + road_nodes
+
     resolved, missing = {}, []
     for label, spec in ENDPOINTS.items():
-        hit = find_node(nodes, spec["match"], spec.get("what"))
+        hit = find_node(pool, spec["match"], spec.get("what"))
         if hit:
             resolved[label] = hit
         else:
@@ -377,6 +384,42 @@ def load_endpoint_nodes():
                 nodes.append(dict(name=station_of(e["tags"]), lat=c["lat"], lon=c["lon"],
                                   tags=e["tags"]))
     return nodes
+
+
+def nodes_from_roads():
+    """Named street ways from the cached road network, usable as endpoint hints.
+
+    Fallback source for endpoints the place-centric probes miss. Rawa Denok, for
+    example, has no OSM place or POI at all, but the roads that serve it are
+    mapped -- so matching on street names recovers a plausible position without
+    inventing a coordinate. Cheap and offline: it reads roads.json, which
+    build_graph() already fetches and caches.
+    """
+    p = Path(str(CACHE_DIR / "roads.json"))
+    if not p.exists():
+        return []
+    out = []
+    try:
+        data = json.load(open(p))
+    except (ValueError, OSError):
+        return []
+    for w in data.get("elements", []):
+        tags = w.get("tags") or {}
+        nm = tags.get("name")
+        geom = w.get("geometry") or []
+        if not nm or len(geom) < 2:
+            continue
+        # Midpoint of the way: a street name identifies an area better than
+        # either end of it, and an endpoint is somewhere along it.
+        mid = geom[len(geom) // 2]
+        # Constrain to the city: several of these roads continue well outside
+        # Kota Depok ("Jalan Raya Bojonggede—Kemang" runs south past the border),
+        # and an angkot endpoint is by definition inside the city.
+        if not in_depok(mid["lon"], mid["lat"]):
+            continue
+        out.append(dict(name=station_of(tags), lat=mid["lat"], lon=mid["lon"],
+                        tags=dict(tags, _waypoint="1")))
+    return out
 
 
 def find_node(nodes, match, want=None):

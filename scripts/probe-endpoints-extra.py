@@ -52,8 +52,10 @@ TAGS = [
 
 
 def query(q):
+    """Query with retries. Overpass answers 429/504 constantly under load, so a
+    single try per mirror fails often enough to matter; back off and try again."""
     body = urllib.parse.urlencode({"data": q}).encode()
-    for attempt, ep in enumerate(MIRRORS):
+    for attempt, ep in enumerate(MIRRORS * 2):
         try:
             req = urllib.request.Request(ep, data=body, headers={"User-Agent": UA})
             with urllib.request.urlopen(req, timeout=180) as r:
@@ -64,11 +66,32 @@ def query(q):
     return None
 
 
+def save(found, misses):
+    """Write after every endpoint so a run killed by a flaky mirror still keeps
+    whatever it managed to resolve."""
+    out = CACHE_DIR / "endpoints-extra.json"
+    json.dump({"found": found, "missing": misses}, open(out, "w"))
+    return out
+
+
 def main():
-    tag_filter = "|".join("k:%s" % t for t in TAGS)
+    out_path = CACHE_DIR / "endpoints-extra.json"
     found, misses = {}, []
+    if out_path.exists():
+        try:
+            prev = json.load(open(out_path))
+            found = prev.get("found") or {}
+            misses = prev.get("missing") or []
+        except (ValueError, OSError):
+            pass
+    already = [k for k in WANTED if k in found]
+    if already:
+        sys.stderr.write("skipping %d already resolved: %s\n"
+                         % (len(already), ", ".join(already)))
 
     for label, subs in WANTED.items():
+        if label in found:
+            continue
         name_re = "|".join(re.escape(s) for s in subs)
         q = """[out:json][timeout:180];
 (
@@ -94,14 +117,16 @@ out center tags;""" % (name_re, BBOX)
         hits.sort(key=lambda h: (len(h["name"] or ""), h["name"] or ""))
         if hits:
             found[label] = hits[:8]
+            misses = [m for m in misses if m != label]
             sys.stderr.write("  %d hit(s): %s\n"
                              % (len(hits), ", ".join(h["name"] for h in hits[:4])))
         else:
-            misses.append(label)
+            if label not in misses:
+                misses.append(label)
             sys.stderr.write("  no hit\n")
+        save(found, misses)
 
-    out = CACHE_DIR / "endpoints-extra.json"
-    json.dump({"found": found, "missing": misses}, open(out, "w"))
+    out = save(found, misses)
     sys.stderr.write("\nwrote %s: %d resolved, %d still missing (%s)\n"
                      % (out, len(found), len(misses), ", ".join(misses) or "none"))
     return 0
