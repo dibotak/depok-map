@@ -1000,6 +1000,9 @@ card.addEventListener('click', e => {
   btn.title = on ? 'Perkecil info' : 'Perluas info';
   // The card changes height, so the road banner above it must re-measure.
   positionRoadCard();
+  // Its height also used to drag the map's container down with it. syncMapSize()
+  // is a no-op when the container is already viewport-sized.
+  requestAnimationFrame(syncMapSize);
 });
 
 /* ---------- sidebar ---------- */
@@ -1069,11 +1072,39 @@ function syncAttribInset() {
   if (h > 0) document.documentElement.style.setProperty('--attrib-h', `${h}px`);
 }
 
+/**
+ * Keep the map canvas the same size as its container, and the container the same
+ * size as the viewport.
+ *
+ *  The container is now `position: fixed`, so CSS alone should hold it open. But
+ *  MapLibre also runs its own resize tracking against a *detached* measurement
+ *  in some engines, and a mobile browser's dynamic toolbar changes the visual
+ *  viewport without firing `resize`. Either way the failure is identical and
+ *  very visible: the canvas re-rasterises at a fraction of the real size and the
+ *  map appears to vanish. Collapsing the answer card used to trigger exactly
+ *  this, because every overlay is out of flow, so body's box -- and with it the
+ *  absolutely-positioned container -- shrank with the card.
+ *
+ *  So: compare the container against the viewport, and correct it when it
+ *  drifts. Cheap, idempotent, and it cannot fight a correct layout because it
+ *  only writes when the size is actually wrong.
+ */
+function syncMapSize() {
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const el = map.getContainer();
+  const r = el.getBoundingClientRect();
+  if (r.width === vw && r.height === vh) return;
+  el.style.width = `${vw}px`;
+  el.style.height = `${vh}px`;
+  map.resize();
+}
+
 function setSidebar(open) {
   sideEl.hidden = !open;
   document.body.classList.toggle('side-open', open);
   if (open) {
-    map.resize();
+    syncMapSize();
     // Focus the panel so keyboard users land inside it rather than behind it.
     const first = sideEl.querySelector('.side-tab.is-on');
     if (first) first.focus({ preventScroll: true });
@@ -1104,6 +1135,20 @@ function relayoutOverlays() {
 }
 window.addEventListener('resize', relayoutOverlays);
 window.addEventListener('orientationchange', relayoutOverlays);
+
+/* Catch a container that drifts for any reason we did not anticipate: a mobile
+   toolbar collapsing, a browser-UI resize that skips the `resize` event, or a
+   future layout change that again lets a sibling influence the map's box. The
+   observer fires on the element itself, so it covers cases the window-level
+   listeners above never hear about. */
+if (typeof ResizeObserver === 'function') {
+  let pending = false;
+  new ResizeObserver(() => {
+    if (pending) return;
+    pending = true;
+    requestAnimationFrame(() => { pending = false; syncMapSize(); });
+  }).observe(map.getContainer());
+}
 
 sideToggle.addEventListener('click', () => setSidebar(sideEl.hidden));
 sideClose.addEventListener('click', () => setSidebar(false));
@@ -1351,6 +1396,7 @@ sideEl.hidden = true;
 /* Measure the attribution before the first overlay placement, so the card does
    not paint on top of the licence line and then jump. */
 relayoutOverlays();
+syncMapSize();
 
 const hash = decodeURIComponent(location.hash.slice(1));
 if (hash) {

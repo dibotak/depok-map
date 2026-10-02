@@ -68,7 +68,16 @@ body {
   transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
 }
 
-#map { position: absolute; inset: 0; background: var(--bg); }
+/* position:fixed, not absolute. `inset: 0` on an absolute box resolves against
+   the *body* box, and this body has `overflow: hidden` with every overlay
+   absolutely or fixed positioned out of flow -- so body's box is content-driven
+   and collapses the moment a sibling's height changes. Collapsing the answer
+   card (body.card-min) shrank body's box, which shrank this container, and
+   MapLibre's own auto-resize dutifully re-rasterised the canvas at the wrong
+   size: the map went to a 38x38 stamp and the viewport looked empty. Fixed
+   positioning takes the viewport as the containing block, so no sibling can
+   ever resize the map. syncMapSize() below is the belt-and-braces half. */
+#map { position: fixed; inset: 0; background: var(--bg); }
 
 /* MapLibre chrome inherits our tokens so it doesn't stay light in dark mode. */
 .maplibregl-ctrl-group {
