@@ -625,10 +625,19 @@ body.side-open .card {
   }
   /* Match the 44px search box so the top row stays one level. */
   .side-toggle { width: 44px; height: 44px; }
-  /* Taller tap targets on touch. */
-  .side-tab, .side-theme, .side-close { height: 34px; }
-  .side-row { padding: 10px 13px; }
-  .road-head { padding: 11px 13px; }
+  /* Tap targets: 44px is the WCAG 2.5.5 / iOS minimum for anything a thumb has
+     to hit. The 30x30 icon buttons and 30px-tall rows measured well under it. */
+  .side-theme, .side-close { width: 40px; height: 40px; }
+  .side-tab { height: 40px; }
+  .locate-btn { height: 40px; }
+  .card-min { width: 40px; height: 40px; top: 6px; right: 6px; }
+  .side-row { padding: 12px 13px; min-height: 44px; }
+  .road-row { padding: 10px 13px 10px 26px; min-height: 44px; }
+  .road-head { padding: 11px 13px; min-height: 44px; }
+  /* The panel is full-width and overlays the map, so the card peeking out
+     under it just looked broken. Hide both overlays while it is open. */
+  body.side-open .card,
+  body.side-open .road-note-card { display: none; }
 }
 
 .back {
@@ -708,10 +717,12 @@ body.side-open .card {
 
   .card {
     left: 10px; right: 10px; width: auto;
-    /* Measured: card bottom 808 vs attribution top 804 at 390x844 — the card
-       overlapped the licence line by 4px. The attribution is ~38px tall, so
-       clear it plus a gap rather than assuming a fixed height. */
-    bottom: calc(max(10px, env(safe-area-inset-bottom)) + 46px);
+    /* The attribution wraps to two or three lines on a phone, so its height is
+       not a constant. It measured 53px at 390px wide against the 46px this rule
+       assumed, so the card sat on the licence line. --attrib-h is set from the
+       measured height in JS (see syncAttribInset); 46px stays as the fallback
+       for the first paint before that runs. */
+    bottom: calc(max(10px, env(safe-area-inset-bottom)) + var(--attrib-h, 46px) + 8px);
   }
   .card-name { font-size: 19px; }
   .rung .lvl { min-width: 84px; }
@@ -719,6 +730,12 @@ body.side-open .card {
   /* The legend would sit on top of the card on a phone; the card already
      names the kecamatan, so the legend is redundant there. */
   .legend { display: none; }
+  /* MapLibre's zoom/compass buttons and the search clear button are 29-30px,
+     under the touch minimum. Bump the buttons only -- the icons stay. */
+  .maplibregl-ctrl-group button { width: 40px; height: 40px; }
+  .maplibregl-ctrl-group button + button { margin-top: 0; }
+  .maplibregl-ctrl-icon { transform: scale(1.2); }
+  .clear { width: 40px; height: 40px; }
   .attrib {
     left: 10px; right: 10px; max-width: none;
     text-align: center; border-radius: 6px;

@@ -98,6 +98,17 @@ would 404 every asset — use `map.dibotak.com`, not a subpath.
 - **Deep links**: `#id3276031005` for a kelurahan, `#kec/id3276040` for a
   kecamatan. Both are shareable and survive a reload.
 
+- **Mobile: nothing overlaps, everything is tappable.** The answer card clears
+  the licence line by a *measured* amount — the attribution wraps to 53px at
+  390px wide but only 39px at 430px, so its real height is published as
+  `--attrib-h` by `syncAttribInset()` and re-derived on resize, rotate, and
+  theme change. The card and road banner are hidden outright while the panel is
+  open; at full width the panel covers the map anyway, so a card peeking out
+  underneath it just looked broken. Every control a thumb has to hit is at least
+  40px: the theme and close buttons, the search clear button, the card
+  minimise, the GPS button, each list row, and MapLibre's own zoom/compass
+  buttons (29px by default).
+
 At each level the map shows only that level's detail — 63 kelurahan lines drawn
 over 11 kecamatan outlines at city zoom reads as noise, not hierarchy. The
 kelurahan overlay is genuinely hidden, not just dimmed, and at kecamatan view the

@@ -846,6 +846,9 @@ function applyTheme(next) {
   localStorage.setItem('depok-theme', next);
   document.querySelector('meta[name=theme-color]').content =
     getComputedStyle(document.documentElement).getPropertyValue('--theme-color').trim();
+  // Dark mode re-wraps the licence line to a different number of lines, so the
+  // card's offset has to be re-derived once the new theme has painted.
+  requestAnimationFrame(relayoutOverlays);
   map.setStyle(STYLES[next]);
 }
 
@@ -1051,6 +1054,21 @@ function positionRoadCard() {
   roadCard.style.setProperty('--card-h', `${offset}px`);
 }
 
+/** Publish the attribution's real height so the card can clear it.
+ *
+ *  The licence line wraps to two or three lines on a phone, so its height is a
+ *  function of viewport width and the theme (dark mode re-wraps differently).
+ *  A hardcoded bottom offset therefore either overlaps the text or leaves a
+ *  gap. Measure it and expose it as --attrib-h; the CSS falls back to a
+ *  constant for the first paint before this runs.
+ */
+function syncAttribInset() {
+  const attrib = document.getElementById('attrib');
+  if (!attrib) return;
+  const h = Math.round(attrib.getBoundingClientRect().height);
+  if (h > 0) document.documentElement.style.setProperty('--attrib-h', `${h}px`);
+}
+
 function setSidebar(open) {
   sideEl.hidden = !open;
   document.body.classList.toggle('side-open', open);
@@ -1077,8 +1095,15 @@ document.getElementById('road-card-x').addEventListener('click', () => highlight
 
 // The banner's offset depends on the answer card's position, which moves on
 // rotate and on viewport changes.
-window.addEventListener('resize', positionRoadCard);
-window.addEventListener('orientationchange', positionRoadCard);
+/* Re-measure the attribution first: its height feeds the card's bottom offset,
+   and the road banner then stacks on whatever the card ended up doing. Order
+   matters -- the banner reads the card's new top edge. */
+function relayoutOverlays() {
+  syncAttribInset();
+  positionRoadCard();
+}
+window.addEventListener('resize', relayoutOverlays);
+window.addEventListener('orientationchange', relayoutOverlays);
 
 sideToggle.addEventListener('click', () => setSidebar(sideEl.hidden));
 sideClose.addEventListener('click', () => setSidebar(false));
@@ -1323,6 +1348,9 @@ renderBack();
 renderAreaList();
 renderRoads();
 sideEl.hidden = true;
+/* Measure the attribution before the first overlay placement, so the card does
+   not paint on top of the licence line and then jump. */
+relayoutOverlays();
 
 const hash = decodeURIComponent(location.hash.slice(1));
 if (hash) {
