@@ -113,6 +113,14 @@
   <!-- transport ------------------------------------------------------ -->
   <div class="side-panel" id="panel-transport" role="tabpanel"
        aria-labelledby="tab-transport" hidden>
+    <!-- Show every intra-city trayek at once, rather than one at a time. The
+         point is comparison: which corridors overlap, where the gaps are. -->
+    <div class="side-locate" id="trans-all-wrap">
+      <label class="trans-all">
+        <input type="checkbox" id="trans-all">
+        <span>Tampilkan semua angkot dalam kota</span>
+      </label>
+    </div>
     <div class="side-scroll" id="transport-scroll">
       <p class="side-note" id="transport-note"></p>
       <div id="transport-groups"></div>
@@ -157,6 +165,30 @@
 
 <!-- answer card ------------------------------------------------------- -->
 <div class="card" id="card"></div>
+
+<!-- selected route detail --------------------------------------------- -->
+<!-- Same shape as the area card above (eyebrow / name / ladder of rungs /
+     foot), because a route has the same kind of hierarchy to show: which city,
+     which corridor, which endpoints. Replaces the transport banner while a
+     route is selected; the banner is kept for the road layer. -->
+<div class="card trans-detail" id="trans-detail" hidden>
+  <div class="card-top">
+    <div class="eyebrow" id="td-eyebrow"></div>
+    <div class="card-name" id="td-name"></div>
+    <button class="card-min" id="td-min" type="button"
+            aria-label="Perkecil info" title="Perkecil info">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M6 9l6 6 6-6"/>
+      </svg>
+    </button>
+  </div>
+  <div class="ladder" id="td-ladder"></div>
+  <div class="kids" id="td-facts"></div>
+  <div class="card-foot">
+    <span class="code" id="td-source"></span>
+  </div>
+</div>
 
 <!-- legend ------------------------------------------------------------ -->
 <div class="legend" id="legend" hidden>

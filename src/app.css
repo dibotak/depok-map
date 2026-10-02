@@ -780,3 +780,57 @@ body.side-open .card {
     transition-duration: .01ms !important;
   }
 }
+
+/* ---------- transport: detail card + show-all toggle ---------- */
+/* The detail card reuses .card wholesale and only adds the route-specific
+   parts, so it sits in the same place, stacks the same way and collapses with
+   the same body.card-collapsed rule as the area card. */
+.card.trans-detail { --road-c: #6d28d9; }
+html[data-theme="dark"] .card.trans-detail { --road-c: #a78bfa; }
+
+/* The ladder is the route's hierarchy: Dari / Via / Ke, mirroring the
+   Provinsi / Kabupaten / Kecamatan rungs on the area card. */
+.trans-detail .rung .nm.leg { font-weight: 600; color: var(--ink); }
+.trans-detail .rung .arrow {
+  flex: none; color: var(--trans-arrow, var(--muted)); font-size: 12px;
+  margin: 0 2px;
+}
+
+/* Fact rows (tarif, status, jalur). Reuse the chip look but lay them out as
+   full-width rows: these are label/value pairs, not short name chips. */
+.trans-facts { display: flex; flex-direction: column; gap: 0; padding: 0 18px 12px; }
+.trans-facts[hidden] { display: none; }
+.trans-fact {
+  display: flex; align-items: baseline; gap: 10px;
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+  font-size: 12.5px;
+}
+.trans-fact:first-child { border-top: 0; }
+.trans-fact dt {
+  flex: none; width: 74px;
+  font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--muted);
+}
+.trans-fact dd { flex: 1; min-width: 0; margin: 0; color: var(--ink-2); line-height: 1.4; }
+
+/* Geometry confidence, carried through from the payload rather than guessed
+   in the UI: "estimasi" must stay visible next to the fare, not only as a
+   badge in the list, or a rider reading the card alone gets a false impression
+   of surveyed accuracy. */
+.trans-warn { color: #b45309; }
+html[data-theme="dark"] .trans-warn { color: #fbbf24; }
+
+.trans-detail .card-foot .code { display: block; line-height: 1.4; }
+
+/* show-all toggle */
+.trans-all {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12.5px; color: var(--ink-2); cursor: pointer; user-select: none;
+}
+.trans-all input {
+  flex: none; width: 15px; height: 15px; margin: 0; cursor: pointer;
+  accent-color: #6d28d9;
+}
+html[data-theme="dark"] .trans-all input { accent-color: #a78bfa; }
+.trans-all:hover { color: var(--ink); }

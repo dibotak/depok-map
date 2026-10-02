@@ -53,6 +53,15 @@
       </div>
     </div>
     <div class="side-panel" id="panel-transport" hidden>
+    <!-- Show every intra-city trayek at once, rather than one at a time. The
+         point is comparison: which corridors overlap, where the gaps are. -->
+    <div class="side-locate" id="trans-all-wrap">
+      <label class="trans-all">
+        <input type="checkbox" id="trans-all">
+        <span>Tampilkan semua angkot dalam kota</span>
+      </label>
+    </div>
+
       <div class="side-scroll" id="transport-scroll">
         <p class="side-note" id="transport-note"></p>
         <div id="transport-groups"></div>
@@ -75,6 +84,30 @@
   </div>
   <button id="back" class="back" hidden><span></span></button>
   <div class="card" id="card"></div>
+<!-- selected route detail --------------------------------------------- -->
+<!-- Same shape as the area card above (eyebrow / name / ladder of rungs /
+     foot), because a route has the same kind of hierarchy to show: which city,
+     which corridor, which endpoints. Replaces the transport banner while a
+     route is selected; the banner is kept for the road layer. -->
+<div class="card trans-detail" id="trans-detail" hidden>
+  <div class="card-top">
+    <div class="eyebrow" id="td-eyebrow"></div>
+    <div class="card-name" id="td-name"></div>
+    <button class="card-min" id="td-min" type="button"
+            aria-label="Perkecil info" title="Perkecil info">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M6 9l6 6 6-6"/>
+      </svg>
+    </button>
+  </div>
+  <div class="ladder" id="td-ladder"></div>
+  <div class="kids" id="td-facts"></div>
+  <div class="card-foot">
+    <span class="code" id="td-source"></span>
+  </div>
+</div>
+
   <div class="legend" id="legend" hidden></div>
   <footer class="attrib" id="attrib"></footer>
 
@@ -164,6 +197,16 @@ maplibregl.Map = function (opts) {
   this.getLayer = function (id) { return self._layers[id]; };
   this.removeLayer = function (id) { delete self._layers[id]; window.__calls.push(['removeLayer', id]); };
   this.moveLayer = Rec('moveLayer');
+  // The real MapLibre setStyle() discards every custom source and layer; the
+  // app relies on restoreLayers() rebuilding them and re-pushing the selected
+  // road, the selected route and the show-all overlay. Without this the stub
+  // kept everything, so that whole recovery path was silently untested.
+  this.setStyle = function (s) {
+    self._layers = {};
+    self._sources = {};
+    self._srcData = {};
+    window.__calls.push(['setStyle']);
+  };
   this.setPaintProperty = function (id, p, v) { window.__calls.push(['setPaintProperty', id, p, v]); };
   this.setLayoutProperty = function (id, p, v) { window.__calls.push(['setLayoutProperty', id, p, v]); };
   this.setLayerZoomRange = Rec('setLayerZoomRange');

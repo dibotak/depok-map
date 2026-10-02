@@ -336,12 +336,21 @@ def build_angkot():
             key="angkot-" + t["ref"], name="Angkot %s" % t["ref"],
             ref=t["ref"], network="Kota Depok (mikrotrans/angkot)",
             klass="bus-kota", scope="kota", status="beroperasi",
-            **{"from": t["a"], "to": t["b"]},
+            # Stored as from_/to with a trailing underscore throughout, because
+            # "from" is a Python keyword and awkward to read inside a dict()
+            # literal. The payload serializer at build() only reads from_, so
+            # writing a bare "from" here silently dropped the origin of all 14
+            # trayek and the detail card had nothing to show for "dari".
+            from_=t["a"], to=t["b"],
             note=("Angkot dalam kota. Jalur %s. Tarif dasar %s sesuai Perwali "
                   "52/2022 (indikatif; Dishub sedang menata ulang tarif)."
                   % ("%s via %s" % (t["a"], t["via"]) if t.get("via")
                      else "%s - %s" % (t["a"], t["b"]), t["fare"])),
-            fare=t["fare"], busiest=t.get("busiest"),
+            fare=t["fare"],
+            # Surfaced in the detail card so the rider sees the corridor the
+            # Dishub description names, not just the two endpoints.
+            via=t.get("via"),
+            busiest=t.get("busiest"),
             source=("Dishub Kota Depok via berita.depok.go.id (30 Sep 2024); "
                     "tarif Perwali 52/2022"),
             checked="2024-09-30",
@@ -568,6 +577,7 @@ def build():
             geometry=r.get("geometry", "osm"),
             geometry_note=r.get("geometry_note"),
             busiest=r.get("busiest"),
+            via=r.get("via"),
             **{"from": r.get("from_"), "to": r.get("to")},
             segments=r["segments"],
         ) for r in routes],

@@ -96,6 +96,10 @@ const SRC_KEC = 'kecamatan';
 const SRC_KEL = 'kelurahan';
 const SRC_ROAD = 'jalan';
 const SRC_TRANS = 'rute';
+/* Every intra-city trayek at once, for the "show all" toggle. A separate source
+   from the selected route so the two can be shown together -- the overlay is
+   the context, the selected route is drawn on top of it. */
+const SRC_TRANS_ALL = 'rute-semua';
 let mapReady = false;
 
 /**
@@ -167,6 +171,10 @@ function paint() {
     ['trans-sel-halo', 'line-color', p.trans],
     ['trans-sel-label', 'text-halo-color', p.trans],
     ['trans-sel-label', 'text-color', p.halo],
+    ['trans-all', 'line-color', p.trans],
+    ['trans-all-halo', 'line-color', p.trans],
+    ['trans-all-label', 'text-halo-color', p.trans],
+    ['trans-all-label', 'text-color', p.halo],
   ]) {
     if (map.getLayer(id)) map.setPaintProperty(id, prop, val);
   }
@@ -321,6 +329,54 @@ function addLayers() {
   // own, and it is drawn in a colour no other layer uses.
   if (!map.getSource(SRC_TRANS)) {
     map.addSource(SRC_TRANS, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+  }
+  // The "show all intra-city trayek" overlay. Added before trans-sel so the
+  // selected route paints on top of the network it belongs to.
+  if (!map.getSource(SRC_TRANS_ALL)) {
+    map.addSource(SRC_TRANS_ALL, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+  }
+  if (!map.getLayer('trans-all')) {
+    map.addLayer({
+      id: 'trans-all-halo', type: 'line', source: SRC_TRANS_ALL,
+      filter: ['==', ['get', 'role'], 'line'],
+      paint: {
+        'line-color': PALETTE[state.theme].trans,
+        'line-width': 8,
+        'line-opacity': 0.16,
+        'line-blur': 2,
+      },
+    });
+    map.addLayer({
+      id: 'trans-all', type: 'line', source: SRC_TRANS_ALL,
+      filter: ['==', ['get', 'role'], 'line'],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': PALETTE[state.theme].trans,
+        // Solid and thin, against the selected route's dashed and thick: the
+        // overlay is context, not the subject.
+        'line-width': 1.6,
+        'line-opacity': 0.5,
+      },
+    });
+    // Ref numbers on every trayek, so the network is readable without clicking
+    // through all 14 of them.
+    map.addLayer({
+      id: 'trans-all-label', type: 'symbol', source: SRC_TRANS_ALL,
+      filter: ['==', ['get', 'role'], 'label'],
+      layout: {
+        'text-field': ['get', 'label'],
+        'text-size': 10.5,
+        'text-font': ['Noto Sans Regular'],
+        'text-anchor': 'center',
+        'symbol-placement': 'point',
+      },
+      paint: {
+        'text-color': PALETTE[state.theme].halo,
+        'text-halo-color': PALETTE[state.theme].trans,
+        'text-halo-width': 2,
+        'text-halo-blur': 0.3,
+      },
+    });
   }
   if (!map.getLayer('trans-sel')) {
     map.addLayer({
@@ -483,6 +539,7 @@ function goCity(opts = {}) {
 }
 
 function openDistrict(code, opts = {}) {
+  renderRouteCard(null);   // area selection supersedes a route
   const kec = KEC_BY_CODE.get(code);
   if (!kec) return;
   state.view = 'kecamatan';
@@ -500,6 +557,7 @@ function openDistrict(code, opts = {}) {
 
 /** Selects a kelurahan by village_code. Names are ambiguous (see KEL_BY_CODE). */
 function selectVillage(code, opts = {}) {
+  renderRouteCard(null);   // area selection supersedes a route
   const f = KEL_BY_CODE.get(code);
   if (!f) return;
   state.village = code;
@@ -521,6 +579,7 @@ function selectVillage(code, opts = {}) {
 }
 
 function selectDistrict(name, opts = {}) {
+  renderRouteCard(null);   // area selection supersedes a route
   const f = KEC_BY_NAME.get(name);
   if (f) openDistrict(f.properties.district_code, opts);
 }
@@ -983,6 +1042,23 @@ function restoreLayers() {
       // findRoad() returns {road, label}; roadFeatures() needs the road itself.
       const hit = findRoad(selectedRoad);
       if (hit.road) map.getSource(SRC_ROAD).setData(roadFeatures(hit.road));
+    }
+    // Same problem, same fix, for the two transport sources: setStyle() drops
+    // both back to empty, so without this a selected route disappears on a
+    // theme toggle and the show-all network silently switches itself off.
+    if (selectedRoute) {
+      const r = TRANSPORT.routes.find(x => x.key === selectedRoute);
+      if (r && r.segments && r.segments.length) {
+        map.getSource(SRC_TRANS).setData(transportFeatures(r));
+      }
+    }
+    if (showAllAngkot) {
+      const src = map.getSource(SRC_TRANS_ALL);
+      if (src) {
+        const feats = [];
+        for (const r of kotaAngkotWithGeometry()) feats.push(...transportFeatures(r).features);
+        src.setData({ type: 'FeatureCollection', features: feats });
+      }
     }
     stop();
   };
@@ -1555,7 +1631,7 @@ function transportBounds(route) {
   return minx <= maxx ? [[minx, miny], [maxx, maxy]] : null;
 }
 
-/** Draw the selected route, zoom to it, and show its banner. */
+/** Draw the selected route, zoom to it, and show its detail card. */
 function highlightRoute(key) {
   selectedRoute = key;
   if (!map.getSource(SRC_TRANS)) return;
@@ -1563,6 +1639,12 @@ function highlightRoute(key) {
   if (!route || !route.segments || !route.segments.length) {
     map.getSource(SRC_TRANS).setData({ type: 'FeatureCollection', features: [] });
     transportCard.hidden = true;
+    renderRouteCard(null);
+    // Hand the screen back to the area card, which is where the user was
+    // before they picked a route.
+    card.hidden = false;
+    renderCard();
+    relayoutOverlays();
     renderTransport();
     return;
   }
@@ -1575,11 +1657,20 @@ function highlightRoute(key) {
       duration: 800,
     });
   }
+  // The detail card supersedes the small banner: it carries the same ref and
+  // name plus the endpoints, fare and geometry confidence. Keep the banner as
+  // the fallback for a route with no geometry, which cannot open the card.
   transportCardRef.textContent = route.ref || route.network || 'Rute';
   transportCardName.textContent = routeName(route);
   transportCard.style.setProperty('--road-c', PALETTE[state.theme].trans);
-  transportCard.hidden = false;
+  transportCard.hidden = true;
+  renderRouteCard(route);
+  // The area card and the route card are both .card and would stack on top of
+  // each other, so the area one steps aside for as long as a route is chosen.
+  card.hidden = true;
+  legend.hidden = true;
   positionRoadCard();
+  relayoutOverlays();
   renderTransport();
 }
 
@@ -1588,6 +1679,83 @@ function routeName(r) {
   if (a && b) return `${a} – ${b}`;
   return r.name;
 }
+
+/* ---------- route detail card ---------- */
+/* The area card shows a place's hierarchy (kelurahan -> kecamatan ->
+   kabupaten -> provinsi). A route has the same shape of thing: where it starts,
+   what it passes, where it ends. Reusing .card wholesale means it inherits the
+   minimise button, the collapsed-body rule and the mobile layout for free. */
+const tdEyebrow = document.getElementById('td-eyebrow');
+const tdName = document.getElementById('td-name');
+const tdLadder = document.getElementById('td-ladder');
+const tdFacts = document.getElementById('td-facts');
+const tdSource = document.getElementById('td-source');
+const tdMin = document.getElementById('td-min');
+const tdDetail = document.getElementById('trans-detail');
+
+function renderRouteCard(route) {
+  if (!route) { tdDetail.hidden = true; return; }
+  const segs = route.segments || [];
+  tdDetail.hidden = false;
+
+  tdEyebrow.textContent = route.scope === 'kota' ? 'Trayek dalam kota' : 'Rute transportasi';
+  tdName.textContent = routeName(route);
+
+  // Ladder: Dari / [via] / Ke, matching the area card's rung layout.
+  tdLadder.innerHTML = '';
+  const rungs = [];
+  if (route.from) rungs.push(['Dari', route.from, true]);
+  if (route.via) rungs.push(['Via', route.via, false]);
+  if (route.to) rungs.push(['Ke', route.to, true]);
+  for (const [lvl, val, isLeg] of rungs) {
+    const row = document.createElement('div');
+    row.className = 'rung';
+    const dot = document.createElement('i');
+    dot.className = 'dot';
+    const l = document.createElement('span');
+    l.className = 'lvl'; l.textContent = lvl;
+    const v = document.createElement('span');
+    v.className = isLeg ? 'nm leg' : 'nm';
+    v.textContent = val;
+    row.append(dot, l, v);
+    tdLadder.append(row);
+  }
+
+  // Facts. Every field is optional; the angkot trayek have fare + estimated
+  // geometry, the OSM relations have neither.
+  const facts = [];
+  if (route.fare) facts.push(['Tarif', esc(route.fare)]);
+  if (route.busiest) facts.push(['Puncak', esc(route.busiest)]);
+  if (route.network) facts.push(['Operator', esc(route.network)]);
+  if (!segs.length) {
+    facts.push(['Jalur', '<span class="trans-warn">Belum ada jalur digambar</span>']);
+  } else if (route.geometry === 'estimated') {
+    facts.push(['Jalur', '<span class="trans-warn">Estimasi</span> — bukan hasil survei']);
+  } else {
+    facts.push(['Jalur', 'Traced dari OpenStreetMap']);
+  }
+  if (route.status === 'unverified') {
+    facts.push(['Status', '<span class="trans-warn">Belum diverifikasi untuk 2026</span>']);
+  }
+  if (route.checked) facts.push(['Data', esc(route.checked)]);
+
+  tdFacts.className = 'kids trans-facts';
+  tdFacts.innerHTML = facts
+    .map(([k, v]) => `<div class="trans-fact"><dt>${k}</dt><dd>${v}</dd></div>`)
+    .join('');
+
+  tdSource.textContent = route.source || '';
+  // The minimise button is rebuilt on every render, so re-apply the label from
+  // the body state or it comes back saying "Perkecil" while collapsed.
+  const expanded = !document.body.classList.contains('card-collapsed');
+  tdMin.setAttribute('aria-label', expanded ? 'Perkecil info' : 'Perluas info');
+  tdMin.title = expanded ? 'Perkecil info' : 'Perluas info';
+}
+
+tdMin.addEventListener('click', () => {
+  document.body.classList.toggle('card-collapsed');
+  relayoutOverlays();
+});
 
 /** The groups, in the order a rider would look for them: your own city first,
  *  then rail, then everything that leaves the city. */
@@ -1615,14 +1783,22 @@ function renderTransport() {
     transportGroups.innerHTML = '';
     return;
   }
-  const kota = TRANSPORT.routes.filter(r => r.scope === 'kota').length;
+  const kotaRoutes = TRANSPORT.routes.filter(r => r.scope === 'kota');
+  const kota = kotaRoutes.length;
   const unver = TRANSPORT.routes.filter(r => r.status === 'unverified').length;
+  // Say how many of the intra-city routes can actually be drawn, so the "show
+  // all" toggle does not imply a completeness the data does not have.
+  const drawable = kotaRoutes.filter(r => r.segments && r.segments.length).length;
   transportNote.innerHTML =
     `Dari <b>OpenStreetMap</b> — ${TRANSPORT.routes.length} rute yang melintasi `
     + `Kota Depok, disaring batas kota. <b>${kota}</b> di dalam kota. `
     + (unver
       ? `${unver} rute berstatus <i>belum diverifikasi</i> untuk 2026: `
         + `OSM mencatat jalurnya, bukan apakah layanannya masih jalan.`
+      : '')
+    + (drawable < kota
+      ? ` <b>${drawable}</b> dari ${kota} rute dalam kota punya jalur; sisanya `
+        + `tercantum tapi belum bisa digambar.`
       : '')
     + ` Jalur angkot <i>diestimasi</i> dari jaringan jalan OSM, bukan hasil survei.`;
 
@@ -1663,6 +1839,57 @@ function renderTransport() {
   }
   transportGroups.innerHTML = html;
 }
+
+/* Show every intra-city trayek at once.
+ *
+ *  Only routes with geometry can be drawn, so the toggle reports how many of
+ *  the 14 it managed to include -- four (D05, D07, D10, D11) have endpoints
+ *  that resolve to no OSM feature at all and are metadata-only. Saying
+ *  "14 trayek" while drawing 10 would overstate what the map shows. */
+const transAllBox = document.getElementById('trans-all');
+let showAllAngkot = false;
+
+function kotaAngkotWithGeometry() {
+  return (TRANSPORT.routes || []).filter(
+    r => r.scope === 'kota' && r.segments && r.segments.length);
+}
+
+function toggleAllAngkot(on) {
+  showAllAngkot = !!on;
+  if (!map.getSource(SRC_TRANS_ALL)) return;
+  const src = map.getSource(SRC_TRANS_ALL);
+  if (!showAllAngkot) {
+    src.setData({ type: 'FeatureCollection', features: [] });
+    return;
+  }
+  const routes = kotaAngkotWithGeometry();
+  // One GeoJSON, many routes: reuse transportFeatures per route and merge, so
+  // each keeps its own ref label.
+  const features = [];
+  for (const r of routes) features.push(...transportFeatures(r).features);
+  src.setData({ type: 'FeatureCollection', features });
+  // Frame the network the first time it is switched on, so it does not land
+  // off-screen when the map happens to be zoomed into a street corner.
+  let minx = 180, miny = 90, maxx = -180, maxy = -90;
+  for (const f of features) {
+    if (f.geometry.type !== 'LineString') continue;
+    for (const [x, y] of f.geometry.coordinates) {
+      if (x < minx) minx = x;
+      if (x > maxx) maxx = x;
+      if (y < miny) miny = y;
+      if (y > maxy) maxy = y;
+    }
+  }
+  if (minx <= maxx) {
+    map.fitBounds([[minx, miny], [maxx, maxy]], {
+      padding: { top: 110, bottom: 220, left: 70, right: 70 },
+      maxZoom: 13.5,
+      duration: 700,
+    });
+  }
+}
+
+transAllBox.addEventListener('change', () => toggleAllAngkot(transAllBox.checked));
 
 /* Transport list interaction. Separate handlers from the road ones because the
    two lists share class names but not behaviour, and a combined query would
