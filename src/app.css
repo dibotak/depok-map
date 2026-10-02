@@ -244,13 +244,13 @@ body {
 }
 .card-min:hover { color: var(--ink); border-color: var(--border-strong); }
 .card-min svg { transition: transform var(--dur) var(--ease); }
-body.card-min .card-min svg { transform: rotate(180deg); }
+body.card-collapsed .card-min svg { transform: rotate(180deg); }
 /* Collapsed: keep only the title row. The card-foot/ladder/kids are hidden
    rather than the whole card so the selection is still identifiable. */
-body.card-min .card .ladder,
-body.card-min .card .kids,
-body.card-min .card .card-foot { display: none; }
-body.card-min .card { padding-bottom: 10px; }
+body.card-collapsed .card .ladder,
+body.card-collapsed .card .kids,
+body.card-collapsed .card .card-foot { display: none; }
+body.card-collapsed .card { padding-bottom: 10px; }
 .eyebrow {
   font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
   color: var(--faint);

@@ -475,7 +475,7 @@ function renderCard(kecOverride) {
   const syncCardMin = () => {
     const b = card.querySelector('.card-min');
     if (!b) return;
-    const expanded = !document.body.classList.contains('card-min');
+    const expanded = !document.body.classList.contains('card-collapsed');
     b.setAttribute('aria-label', expanded ? 'Perkecil info' : 'Perluas info');
     b.title = expanded ? 'Perkecil info' : 'Perluas info';
   };
@@ -995,7 +995,7 @@ function esc(s) {
 card.addEventListener('click', e => {
   const btn = e.target.closest('.card-min');
   if (!btn) return;
-  const on = !document.body.classList.toggle('card-min');
+  const on = !document.body.classList.toggle('card-collapsed');
   btn.setAttribute('aria-label', on ? 'Perkecil info' : 'Perluas info');
   btn.title = on ? 'Perkecil info' : 'Perluas info';
   // The card changes height, so the road banner above it must re-measure.
@@ -1131,6 +1131,10 @@ document.getElementById('road-card-x').addEventListener('click', () => highlight
    matters -- the banner reads the card's new top edge. */
 function relayoutOverlays() {
   syncAttribInset();
+  // The container is viewport-sized, so a rotate or a browser-UI collapse
+  // leaves it at the old size until something corrects it. Without this the
+  // canvas stays rasterised for the previous viewport.
+  syncMapSize();
   positionRoadCard();
 }
 window.addEventListener('resize', relayoutOverlays);
