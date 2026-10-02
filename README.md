@@ -27,9 +27,9 @@ Connect the repo in the Pages dashboard with:
 | Build output directory | `/` |
 
 The build command prunes the two things the site never loads: `public/data/`
-(1.1 MB of source JSON for the build scripts) and `scripts/`. Neither is
-referenced by `index.html` or `app.js` — `src/data.js` is the only data the
-browser actually fetches, so pruning them is safe and leaves **~2.1 MB** to
+(874 KB of source JSON for the build scripts) and `scripts/`. Neither is
+referenced by `index.html` or `app.js` — `src/data.js` is the only boundary
+data the browser fetches, so pruning them is safe and leaves **~2.0 MB** to
 publish.
 
 Cloudflare Pages has no ignore file for Git-based deploys, so pruning has to
@@ -61,12 +61,23 @@ would 404 every asset — use `map.dibotak.com`, not a subpath.
   no panel minimise — see the answer card below.
 - **The answer card has its own minimise.** The chevron in the card's title row
   collapses it to just the name, which is what actually gets the map back on a
-  phone, where the card covers a third of the screen. The state lives on `<body>`,
-  so picking another area does not pop it open again mid-browse, and it survives
-  drill-down and theme changes. The card is `position: fixed`: as an absolute box
-  it anchored to `<body>`, whose height is content-driven (every other element
-  on the page is absolutely positioned), so collapsing the card dragged itself
-  off the top of the screen.
+  phone, where the card covers a third of the screen. The state lives on `<body>`
+  as `card-collapsed`, so picking another area does not pop it open again
+  mid-browse, and it survives drill-down and theme changes. Two things about the
+  card's anchoring are load-bearing:
+  - The card is `position: fixed`. As an absolute box it anchored to `<body>`,
+    whose height is content-driven (every other element on the page is
+    absolutely positioned), so collapsing the card dragged itself off the top of
+    the screen.
+  - The state class is named `card-collapsed`, **not** `card-min`. `.card-min` is
+    the minimise *button's* class, and its rule is `position: absolute; top: 10px;
+    right: 10px; width: 30px; height: 30px`. Putting `card-min` on `<body>` made
+    body match the button's own rule and collapsed body into a 30×30 box at the
+    top right. `#map` and `.card` are `position: fixed` so they survived
+    untouched — which is why the map looked fine while every `position: absolute`
+    overlay (`.topbar`, `.sidebar`, `.back`, `.legend`, `.attrib`,
+    `.road-note-card`) squeezed into a 2px strip. **A class name used for state
+    on `<body>` must never also be an element class in the stylesheet.**
 - **Theme and GPS live in the sidebar.** The light/dark toggle sits in the
   sidebar header instead of inside the search box, where it ate ~44px of input
   width. "Cari lokasi saya" is a row under *Wilayah*, with its result next to it
@@ -125,10 +136,12 @@ index.html            markup + attribution
 src/app.js            map, drill-down, search, theme, geolocation
 src/app.css           theme tokens (light/dark) + all styling
 src/data.js           generated — 74 features as window.DEPOK
-public/data/          generated — the same data as JSON
+src/roads.js          generated — 77 ruas as window.DEPOK_ROADS (committed)
+public/data/          generated — the boundaries as JSON, build input only
 vendor/maplibre-gl.*  MapLibre GL JS 5.6 (vendored, no CDN at runtime)
 scripts/              data pipeline
 shots/                screenshots (gitignored)
+.venv-build/          pip target for Shapely (gitignored)
 ```
 
 ## Regenerating the boundary data
@@ -233,7 +246,7 @@ library (the district scripts need Shapely; the road script does not).
 | Source | HDX/BPS `cod-ab-idn` via `JfrAziz/indonesia-district` |
 | Licence | **CC BY-IGO** — attribution required, commercial use fine |
 | Vintage | 2020-04-01 |
-| Size | 1098 KB raw / **264 KB gzipped** for both levels |
+| Size | 854 KB raw / **214 KB gzipped** for both levels |
 
 The hierarchy is denormalised into every feature (`district_code`,
 `village_code`), so drilling down is a client-side lookup — no server and no
@@ -275,5 +288,30 @@ two are attributed separately in the footer.
 - **Measure responsive layout, don't eyeball it.** The back button overlapped the
   centred search box below 1025px and the summary line again between 721–1024px;
   both were found by comparing `getBoundingClientRect()` pairs, not by looking.
+- **A state class on `<body>` must not collide with any element class.** This is
+  the one that cost the most, because the symptom lies about its own cause: the
+  map looked *fine* while the entire UI was destroyed. `<body>` was getting
+  `card-min` — also the minimise button's class, whose rule pins an element to
+  `position: absolute; top: 10px; right: 10px; width: 30px; height: 30px`. Body
+  became a 30×30 box. Because `#map` and `.card` are `position: fixed`, they were
+  immune, so the report was "map's fine, UI's so broken" — and the natural
+  conclusion was that two things were wrong when only one was. Every
+  `position: absolute` overlay resolved against the shrunken body instead
+  (`.topbar` to x=1240, `.sidebar` to 2px tall, the road list to
+  `clientHeight: 0`). State classes now use a distinct prefix (`card-collapsed`,
+  `side-open`) and never reuse an element class name.
+- **`position: absolute` on an overlay is a landmine when every sibling is out of
+  flow.** `<body>` has `overflow: hidden` and no in-flow content, so its box is
+  content-driven: *any* sibling height change re-anchors it and drags every
+  absolute child with it. Overlays that must not move (`#map`, `.card`, `.back`,
+  `.attrib`) are `position: fixed`, and `syncMapSize()` compares the map's
+  container against `innerWidth/innerHeight` and calls `map.resize()` when they
+  drift — belt and braces for the mobile-toolbar case where the visual viewport
+  changes without a `resize` event. `relayoutOverlays()` calls it on every resize
+  and rotate.
+- **Diagnose by measuring `<body>`, not just the element you were looking at.**
+  The whole class of bug above shows up as `document.body.getBoundingClientRect()`
+  being the wrong size. If body is not the viewport, every absolutely-positioned
+  descendant is suspect.
 - Names from an external dataset go into the DOM via `textContent`, never
   `innerHTML`.
