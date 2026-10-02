@@ -101,28 +101,26 @@ body {
    absolutely positioned at top-left and the search was independently centred,
    which put them on the same line by accident and made the back button below
    the search collide with it at 721-1024px. */
+/* Two columns: an icon-only toggle, then the search filling the rest. The
+   search is no longer centred -- it spans the row, because the toggle lost its
+   label and the theme toggle moved to the sidebar, so there is nothing to
+   balance. Centring it again would waste the width it just gained. */
 .topbar {
   position: absolute; z-index: 1000;
   top: max(16px, env(safe-area-inset-top));
   left: max(18px, env(safe-area-inset-left));
   right: max(18px, env(safe-area-inset-right));
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: start;
-  gap: 10px;
+  gap: 8px;
   pointer-events: none; /* the bar itself must not eat map drags */
 }
 .topbar > * { pointer-events: auto; }
-/* Both the toggle and the tail take the SAME fixed width, so the search stays
-   centred on the viewport no matter how wide the toggle's label gets.
-   Without this the search visibly jumps sideways each time the label changes
-   between "Daftar" / "Tutup" / "Buka" -- the label is not monospaced and its
-   width differs per word, which was enough to shift the centre column. */
-.topbar-tail, .side-toggle { width: 98px; }
 
 .search {
-  justify-self: center;
-  width: min(520px, 100%);
+  justify-self: stretch;
+  width: 100%;
   min-width: 0;
 }
 .search-box {
@@ -149,23 +147,16 @@ body {
 #q::placeholder { color: var(--faint); }
 #q::-webkit-search-cancel-button { display: none; }
 
-.clear, .theme {
+/* .theme now lives in the sidebar header; only the clear button shares this. */
+.clear {
   flex: none; display: grid; place-items: center;
   width: 30px; height: 30px; border-radius: 50%;
   background: none; border: 0; cursor: pointer;
   color: var(--muted); font-family: inherit;
   transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
 }
-.clear:hover, .theme:hover { background: var(--hover); color: var(--ink); }
-.theme .i-moon { display: none; }
-:root[data-theme="dark"] .theme .i-sun { display: none; }
-:root[data-theme="dark"] .theme .i-moon { display: block; }
+.clear:hover { background: var(--hover); color: var(--ink); }
 
-.search-meta {
-  margin: 7px 0 0; text-align: center;
-  font-size: 11.5px; color: var(--ink-2); font-weight: 550;
-  text-shadow: 0 1px 2px var(--surface-solid), 0 0 8px var(--surface-solid);
-}
 
 .results {
   list-style: none; margin: 8px 0 0; padding: 5px;
@@ -196,7 +187,12 @@ body {
 
 /* ---------- answer card ---------- */
 .card {
-  position: absolute; z-index: 900;
+  /* fixed, not absolute: the card is anchored to the viewport by its `bottom`.
+     As an absolute box it resolved against <body>, whose height is content
+     driven (everything else on the page is absolutely positioned). When the
+     card collapses, body's height collapses with it and the card gets dragged
+     off the top of the screen -- minimising it made it vanish entirely. */
+  position: fixed; z-index: 900;
   left: max(18px, env(safe-area-inset-left));
   /* Clear the attribution strip, which sits bottom-right and is ~26px tall.
      Without this the card overlapped it between 721px and ~1024px, where the
@@ -219,7 +215,33 @@ body {
 .card.placeholder p { margin: 0; }
 .card[hidden] { display: none; }
 
-.card-top { padding: 16px 18px 13px; border-bottom: 1px solid var(--border); }
+.card-top {
+  padding: 16px 18px 13px;
+  border-bottom: 1px solid var(--border);
+  /* Anchors .card-min, which is absolutely positioned in the top-right. */
+  position: relative;
+}
+
+/* --- minimise the answer card --- */
+/* Sits in the card's title row. Collapsing the card is how you get the map
+   back on a phone, where the card covers a third of the screen. */
+.card-min {
+  position: absolute; top: 10px; right: 10px;
+  width: 30px; height: 30px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--muted); background: var(--bg);
+  border: 1px solid var(--border); border-radius: 8px; cursor: pointer;
+  transition: color var(--dur) var(--ease), transform var(--dur) var(--ease);
+}
+.card-min:hover { color: var(--ink); border-color: var(--border-strong); }
+.card-min svg { transition: transform var(--dur) var(--ease); }
+body.card-min .card-min svg { transform: rotate(180deg); }
+/* Collapsed: keep only the title row. The card-foot/ladder/kids are hidden
+   rather than the whole card so the selection is still identifiable. */
+body.card-min .card .ladder,
+body.card-min .card .kids,
+body.card-min .card .card-foot { display: none; }
+body.card-min .card { padding-bottom: 10px; }
 .eyebrow {
   font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
   color: var(--faint);
@@ -369,6 +391,34 @@ body {
 }
 .side-note b { color: var(--ink-2); font-weight: 600; }
 
+/* --- GPS row (replaces the removed floating .geo-note banner) --- */
+/* Button and result share a row so the answer stays next to the control that
+   produced it, and so the row cannot push the map down like the banner did. */
+.side-locate {
+  flex: none;
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 13px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+.locate-btn {
+  flex: none;
+  height: 30px; padding: 0 11px;
+  font: inherit; font-size: 12px; font-weight: 560;
+  color: var(--ink-2); background: var(--bg);
+  border: 1px solid var(--border); border-radius: 8px; cursor: pointer;
+  transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.locate-btn:hover { color: var(--ink); border-color: var(--border-strong); }
+.locate-btn:disabled { opacity: .55; cursor: default; }
+.locate-text {
+  font-size: 11.5px; line-height: 1.35; color: var(--muted);
+  min-width: 0; /* let the text wrap instead of stretching the row */
+  overflow-wrap: anywhere;
+}
+/* The area meta note was .search-meta under the search box. */
+#area-note { border-bottom: 1px solid var(--border); }
+
 /* --- area rows --- */
 .side-group {
   padding: 7px 13px 3px;
@@ -454,7 +504,10 @@ body {
 /* Selected-road banner, above the answer card. Inline rather than a toast, so it
    stays put while you keep using the map. */
 .road-note-card {
-  position: absolute; z-index: 920;
+  /* fixed for the same reason as .card: it stacks off --card-h above the card,
+     and must anchor to the viewport, not to a body whose height tracks the map
+     chrome. */
+  position: fixed; z-index: 920;
   left: max(18px, env(safe-area-inset-left));
   bottom: calc(max(18px, env(safe-area-inset-bottom)) + var(--card-h, 0px));
   max-width: 384px; width: calc(100vw - 36px);
@@ -490,15 +543,13 @@ body.side-open .road-note-card { left: calc(max(12px, env(safe-area-inset-left))
 }
 
 /* --- toggle --- */
-/* Now a grid item of .topbar rather than absolutely positioned, which is what
-   puts it on the same level as the search box. Height matches .search-box (46px)
-   so the two read as one row. */
+/* Icon only, square, matching .search-box height so the row reads as one unit.
+   The label lived in a <span> that JS rewrote to Daftar/Tutup/Buka; it is gone,
+   so the accessible name on aria-label is the only label now. */
 .side-toggle {
-  display: flex; align-items: center; gap: 7px;
-  height: 46px; padding: 0 8px;
-  justify-content: center;
-  font: inherit; font-size: 13px; font-weight: 560; color: var(--ink-2);
-  white-space: nowrap;
+  display: flex; align-items: center; justify-content: center;
+  width: 46px; height: 46px; padding: 0;
+  font: inherit; color: var(--ink-2);
   background: var(--surface);
   -webkit-backdrop-filter: saturate(180%) blur(14px);
   backdrop-filter: saturate(180%) blur(14px);
@@ -519,22 +570,24 @@ body.side-open .side-toggle {
   background: var(--bg);
 }
 
-/* --- minimise --- */
-/* Collapses the panel body to just the tab row, so the map stays visible while
-   the list is still one click away. Distinct from close, which hides the panel. */
-.side-min {
+/* --- theme, in the sidebar header --- */
+/* Moved out of the search box: it was eating ~44px of input width, and the
+   input is the primary control on a phone. */
+.side-theme {
   flex: none; width: 30px; height: 30px;
   display: flex; align-items: center; justify-content: center;
   color: var(--muted); background: transparent;
   border: 1px solid transparent; border-radius: 7px; cursor: pointer;
-  transition: color var(--dur) var(--ease), transform var(--dur) var(--ease);
+  transition: color var(--dur) var(--ease);
 }
-.side-min:hover { color: var(--ink); border-color: var(--border); }
-.side-min svg { transition: transform var(--dur) var(--ease); }
-body.side-min .side-min svg { transform: rotate(180deg); }
-/* Minimised: keep the header, drop the body. */
-body.side-min .side-panel { display: none; }
-body.side-min .sidebar { bottom: auto; height: auto; }
+.side-theme:hover { color: var(--ink); border-color: var(--border); }
+.side-theme .i-moon { display: none; }
+:root[data-theme="dark"] .side-theme .i-sun { display: none; }
+:root[data-theme="dark"] .side-theme .i-moon { display: block; }
+
+/* There is no sidebar minimise: it meant "get the list out of the way", which
+   the answer card's own minimise button does better, from the element that
+   actually covers the map. The panel has one shrink action -- close. */
 
 /* Layout shift while the sidebar is open.
    Only .back and .card move. The search box is centred with translateX(-50%),
@@ -570,11 +623,10 @@ body.side-open .card {
        URL bar shows, but it is better than no height at all. */
     max-height: calc(100vh - 150px);
   }
-  body.side-min .sidebar { height: auto; }
   /* Match the 44px search box so the top row stays one level. */
-  .side-toggle { height: 44px; }
+  .side-toggle { width: 44px; height: 44px; }
   /* Taller tap targets on touch. */
-  .side-tab, .side-min, .side-close { height: 34px; }
+  .side-tab, .side-theme, .side-close { height: 34px; }
   .side-row { padding: 10px 13px; }
   .road-head { padding: 11px 13px; }
 }
@@ -610,7 +662,6 @@ body.side-open .card {
    button goes. Measured collision at 768px and 900px. In that band only, drop
    the summary line — the card already states the counts. */
 @media (min-width: 721px) and (max-width: 1024px) {
-  .search-meta { display: none; }
 }
 
 /* ---------- legend ---------- */
@@ -630,24 +681,7 @@ body.side-open .card {
 .sw.sel { background: var(--accent); border-color: var(--accent); }
 .sw.same { background: var(--accent-soft); border-color: var(--accent); }
 
-/* ---------- geolocation result ---------- */
-.geo-note {
-  position: absolute; z-index: 800;
-  top: calc(max(16px, env(safe-area-inset-top)) + 52px); left: 50%;
-  transform: translateX(-50%);
-  width: min(520px, calc(100vw - 32px));
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--r-sm); padding: 8px 13px;
-  font-size: 12px; color: var(--ink-2); box-shadow: var(--shadow-1);
-  display: flex; align-items: center; gap: 9px;
-}
-.geo-note[hidden] { display: none; }
-.geo-note b { color: var(--ink); font-weight: 620; }
-.geo-note button {
-  margin-left: auto; flex: none; font: inherit; font-size: 11.5px; font-weight: 600;
-  color: var(--muted); background: none; border: 1px solid var(--border-strong);
-  border-radius: 6px; padding: 3px 9px; cursor: pointer;
-}
+
 
 /* ---------- attribution ---------- */
 .attrib {
@@ -671,7 +705,6 @@ body.side-open .card {
   .search { width: 100%; }
   .search-box { height: 44px; padding-left: 12px; }
   #q { font-size: 16px; /* 16px avoids iOS Safari's focus-zoom */ }
-  .search-meta { font-size: 11px; }
 
   .card {
     left: 10px; right: 10px; width: auto;

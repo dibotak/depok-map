@@ -469,12 +469,29 @@ const legend = document.getElementById('legend');
 function renderCard(kecOverride) {
   legend.hidden = state.view === 'city';
 
+  // renderCard() rebuilds the card from scratch, so the minimise button is a
+  // brand-new element each time and would come back with the default label even
+  // while the card is collapsed. Re-apply the label from the body state.
+  const syncCardMin = () => {
+    const b = card.querySelector('.card-min');
+    if (!b) return;
+    const expanded = !document.body.classList.contains('card-min');
+    b.setAttribute('aria-label', expanded ? 'Perkecil info' : 'Perluas info');
+    b.title = expanded ? 'Perkecil info' : 'Perluas info';
+  };
+
   if (state.view === 'city') {
     card.className = 'card';
     card.innerHTML = `
       <div class="card-top">
         <div class="eyebrow">Kota Depok</div>
         <div class="card-name"></div>
+      <button class="card-min" type="button" aria-label="Perkecil info" title="Perkecil info">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M6 9l6 6 6-6"/>
+        </svg>
+      </button>
       </div>
       <div class="ladder">
         <div class="rung"><i class="dot"></i><span class="lvl">Provinsi</span><span class="nm prov"></span></div>
@@ -487,6 +504,7 @@ function renderCard(kecOverride) {
     card.querySelector('.prov').textContent = META.province;
     card.querySelector('.scope').textContent =
       `${META.district_count} kecamatan · ${META.village_count} kelurahan`;
+    syncCardMin();
     return;
   }
 
@@ -503,6 +521,12 @@ function renderCard(kecOverride) {
     <div class="card-top">
       <div class="eyebrow"></div>
       <div class="card-name"></div>
+      <button class="card-min" type="button" aria-label="Perkecil info" title="Perkecil info">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M6 9l6 6 6-6"/>
+        </svg>
+      </button>
     </div>
     <div class="ladder"></div>
     <div class="kids"></div>
@@ -576,6 +600,7 @@ function renderCard(kecOverride) {
     // search box with the district name to reach the same list.
     codeEl.textContent = kp.district_code;
   }
+  syncCardMin();
 }
 
 /* ---------- back button ---------- */
@@ -898,29 +923,25 @@ themeBtn.addEventListener('click', () => {
 });
 
 /* ---------- geolocation: "which area am I in?" ---------- */
-const geoNote = document.getElementById('geo-note');
-const geoText = document.getElementById('geo-text');
+// Lives in the sidebar's Wilayah panel, not in a floating banner: the banner
+// sat directly under the search box and pushed the map down on a phone.
+const locateWrap = document.getElementById('side-locate');
+const locateBtn = document.getElementById('locate-btn');
+const geoText = document.getElementById('locate-text');
 
 if ('geolocation' in navigator) {
-  const btn = document.createElement('button');
-  btn.type = 'button';
-  btn.textContent = 'Cari';
-  btn.addEventListener('click', locate);
-  geoNote.append(btn);
-  geoNote.hidden = false;
-  geoText.innerHTML = 'Ingin tahu kelurahannya di mana? <b>Cari lokasi saya</b>';
-
-  navigator.geolocation.getCurrentPosition(
-    pos => showGeo(pos),
-    () => { geoNote.hidden = true; },
-    { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 }
-  );
+  locateWrap.hidden = false;
+  locateBtn.addEventListener('click', locate);
 }
 
 function locate() {
+  // Reflect the in-flight state on the button; a silent 12s wait looks broken.
+  locateBtn.disabled = true;
+  locateBtn.textContent = 'Mencari…';
+  const done = () => { locateBtn.disabled = false; locateBtn.textContent = 'Cari lokasi saya'; };
   navigator.geolocation.getCurrentPosition(
-    pos => showGeo(pos),
-    () => { geoText.textContent = 'Lokasi tidak bisa diakses — pastikan izin lokasi aktif.'; },
+    pos => { done(); showGeo(pos); },
+    () => { done(); geoText.textContent = 'Lokasi tidak bisa diakses — pastikan izin lokasi aktif.'; },
     { enableHighAccuracy: true, timeout: 12000 }
   );
 }
@@ -936,10 +957,10 @@ function showGeo(pos) {
   if (hits.length) {
     const p = hits[0].properties;
     if (drilled) {
-      geoText.innerHTML = `Anda berada di <b>Kelurahan ${esc(p.village)}</b>, Kec. ${esc(p.district)}.`;
+      geoText.textContent = `Anda berada di Kelurahan ${p.village}, Kec. ${p.district}.`;
       selectVillage(p.village_code, { zoom: false });
     } else {
-      geoText.innerHTML = `Anda berada di <b>Kecamatan ${esc(p.district)}</b>.`;
+      geoText.textContent = `Anda berada di Kecamatan ${p.district}.`;
       openDistrict(p.district_code, { zoom: false });
     }
     return;
@@ -949,12 +970,12 @@ function showGeo(pos) {
     const kec = map.queryRenderedFeatures(pt, { layers: ['kec-fill'] });
     if (kec.length) {
       const p = kec[0].properties;
-      geoText.innerHTML = `Di dalam <b>Kecamatan ${esc(p.district)}</b>.`;
+      geoText.textContent = `Di dalam Kecamatan ${p.district}.`;
       selectDistrict(p.district, { zoom: false });
       return;
     }
   }
-  geoText.innerHTML = 'Lokasi ini <b>di luar Kota Depok</b>.';
+  geoText.textContent = 'Lokasi ini di luar Kota Depok.';
 }
 
 function esc(s) {
@@ -962,6 +983,21 @@ function esc(s) {
   d.textContent = s;
   return d.innerHTML;
 }
+
+/* ---------- minimise the answer card ---------- */
+// Collapses the card to its title row so the map underneath is visible. State
+// lives on <body> so it survives the re-render that renderCard() does on every
+// selection change -- otherwise picking another area would pop the card open
+// again mid-browse.
+card.addEventListener('click', e => {
+  const btn = e.target.closest('.card-min');
+  if (!btn) return;
+  const on = !document.body.classList.toggle('card-min');
+  btn.setAttribute('aria-label', on ? 'Perkecil info' : 'Perluas info');
+  btn.title = on ? 'Perkecil info' : 'Perluas info';
+  // The card changes height, so the road banner above it must re-measure.
+  positionRoadCard();
+});
 
 /* ---------- sidebar ---------- */
 const sideEl = document.getElementById('sidebar');
@@ -1015,15 +1051,10 @@ function positionRoadCard() {
   roadCard.style.setProperty('--card-h', `${offset}px`);
 }
 
-const sideMin = document.getElementById('side-min');
-
 function setSidebar(open) {
   sideEl.hidden = !open;
   document.body.classList.toggle('side-open', open);
   if (open) {
-    // Opening always shows the list. A panel that came back still minimised
-    // reads as broken, and the header alone gives no hint it can be expanded.
-    setMinimize(false);
     map.resize();
     // Focus the panel so keyboard users land inside it rather than behind it.
     const first = sideEl.querySelector('.side-tab.is-on');
@@ -1032,27 +1063,14 @@ function setSidebar(open) {
   syncToggle();
 }
 
-/** Minimise/restore the panel body, leaving the tab row visible. */
-function setMinimize(on) {
-  document.body.classList.toggle('side-min', on);
-  sideMin.setAttribute('aria-expanded', String(!on));
-  sideMin.setAttribute('aria-label', on ? 'Perluas daftar' : 'Perkecil daftar');
-  sideMin.title = on ? 'Perluas daftar' : 'Perkecil daftar';
-  syncToggle();
-}
-
-/** The left slot holds one button that means different things depending on the
- *  panel state: "open the list" when closed, "collapse the panel" when open.
- *  Keeping one element (rather than hiding it) stops the top bar's grid from
- *  changing width and shifting the centred search box on every toggle. */
+/** The toggle opens the panel when closed and closes it when open. Icon only,
+ *  so there is no label to keep in sync -- only the accessible name. */
 function syncToggle() {
   const open = !sideEl.hidden;
-  const min = document.body.classList.contains('side-min');
-  const label = open ? (min ? 'Perluas daftar' : 'Perkecil daftar') : 'Buka daftar wilayah dan jalan';
+  const label = open ? 'Tutup daftar' : 'Buka daftar wilayah dan jalan';
   sideToggle.setAttribute('aria-label', label);
   sideToggle.title = label;
-  sideToggle.setAttribute('aria-expanded', String(open && !min));
-  sideToggle.querySelector('span').textContent = open ? (min ? 'Buka' : 'Tutup') : 'Daftar';
+  sideToggle.setAttribute('aria-expanded', String(open));
 }
 
 document.getElementById('road-card-x').addEventListener('click', () => highlightRoad(null));
@@ -1062,21 +1080,10 @@ document.getElementById('road-card-x').addEventListener('click', () => highlight
 window.addEventListener('resize', positionRoadCard);
 window.addEventListener('orientationchange', positionRoadCard);
 
-// One button, two jobs: opens the panel when closed, minimises it when open.
-sideToggle.addEventListener('click', () => {
-  if (sideEl.hidden) return setSidebar(true);
-  setMinimize(!document.body.classList.contains('side-min'));
-});
-sideMin.addEventListener('click', () => {
-  setMinimize(!document.body.classList.contains('side-min'));
-});
+sideToggle.addEventListener('click', () => setSidebar(sideEl.hidden));
 sideClose.addEventListener('click', () => setSidebar(false));
 document.addEventListener('keydown', e => {
-  if (e.key !== 'Escape' || sideEl.hidden) return;
-  // Escape backs out one level at a time: restore a minimised panel first,
-  // then close it. Closing outright would skip the state the user just made.
-  if (document.body.classList.contains('side-min')) setMinimize(false);
-  else setSidebar(false);
+  if (e.key === 'Escape' && !sideEl.hidden) setSidebar(false);
 });
 
 function setTab(which) {

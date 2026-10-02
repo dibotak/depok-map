@@ -18,12 +18,14 @@
 
 <!-- top bar: sidebar toggle + search, on one level -------------------- -->
 <div class="topbar">
+  <!-- Icon only: the label made the button 98px wide for 3 characters, eating
+       search width. The accessible name stays on aria-label. -->
   <button id="side-toggle" class="side-toggle" type="button" aria-expanded="false"
           aria-controls="sidebar" aria-label="Buka daftar wilayah dan jalan">
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
-      <path d="M4 6h16M4 12h16M4 18h10"/>
+    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
+      <path d="M4 6h16M4 12h16M4 18h16"/>
     </svg>
-    <span>Daftar</span>
   </button>
 
   <div class="search" id="search">
@@ -41,23 +43,9 @@
           <path d="M6 6l12 12M18 6L6 18"/>
         </svg>
       </button>
-      <button id="theme" class="theme" type="button" aria-label="Ganti tema" title="Ganti tema terang/gelap">
-        <svg class="i-sun" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-          <circle cx="12" cy="12" r="4.2"/>
-          <path d="M12 2.6v2.2M12 19.2v2.2M2.6 12h2.2M19.2 12h2.2M5.4 5.4l1.6 1.6M17 17l1.6 1.6M18.6 5.4L17 7M7 17l-1.6 1.6"/>
-        </svg>
-        <svg class="i-moon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-          <path d="M20 14.2A8.4 8.4 0 0 1 9.8 4 8.4 8.4 0 1 0 20 14.2z"/>
-        </svg>
-      </button>
     </div>
-    <p class="search-meta" id="search-meta">11 kecamatan · 63 kelurahan · Kota Depok</p>
     <ul class="results" id="results" role="listbox" aria-label="Hasil pencarian" hidden></ul>
   </div>
-
-  <!-- Balances the toggle so the search box stays centred on the viewport.
-       Kept as an element (not a CSS spacer) so the grid has a third track. -->
-  <div class="topbar-tail" aria-hidden="true"></div>
 </div>
 
 <!-- sidebar ------------------------------------------------------------ -->
@@ -69,11 +57,16 @@
       <button class="side-tab" id="tab-road" role="tab" aria-selected="false"
               aria-controls="panel-road" type="button">Jalan</button>
     </div>
-    <button class="side-min" id="side-min" type="button" aria-expanded="true"
-            aria-controls="panel-area" aria-label="Perkecil daftar" title="Perkecil daftar">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-           stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M6 9l6 6 6-6"/>
+    <!-- Theme lives here rather than in the search bar, so the input gets the
+         full width of the top row. -->
+    <button id="theme" class="side-theme" type="button"
+            aria-label="Ganti tema terang/gelap" title="Ganti tema terang/gelap">
+      <svg class="i-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <circle cx="12" cy="12" r="4.2"/>
+        <path d="M12 2.6v2.2M12 19.2v2.2M2.6 12h2.2M19.2 12h2.2M5.4 5.4l1.6 1.6M17 17l1.6 1.6M18.6 5.4L17 7M7 17l-1.6 1.6"/>
+      </svg>
+      <svg class="i-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <path d="M20 14.2A8.4 8.4 0 0 1 9.8 4 8.4 8.4 0 1 0 20 14.2z"/>
       </svg>
     </button>
     <button class="side-close" id="side-close" type="button" aria-label="Tutup daftar">
@@ -85,6 +78,18 @@
 
   <!-- areas -->
   <div class="side-panel" id="panel-area" role="tabpanel" aria-labelledby="tab-area">
+    <!-- Lived under the search box as .search-meta; it is area information, so
+         it belongs with the area list. Outside the scroller on purpose: it is
+         panel context, not list content, and areaList.innerHTML is replaced on
+         every render. -->
+    <p class="side-note" id="area-note">11 kecamatan · 63 kelurahan · Kota Depok</p>
+    <!-- GPS lives here now that the floating .geo-note banner was removed. The
+         button and its result share one row so the answer stays next to the
+         control that produced it. -->
+    <div class="side-locate" id="side-locate" hidden>
+      <button class="locate-btn" id="locate-btn" type="button">Cari lokasi saya</button>
+      <span class="locate-text" id="locate-text"></span>
+    </div>
     <div class="side-scroll" id="area-list"></div>
   </div>
 
@@ -132,11 +137,6 @@
 <div class="legend" id="legend" hidden>
   <span><i class="sw sel"></i>Terpilih</span>
   <span><i class="sw same"></i>Kecamatan terbuka</span>
-</div>
-
-<!-- map controls (maplibre) -->
-<div class="geo-note" id="geo-note" hidden>
-  <span id="geo-text"></span>
 </div>
 
 <footer class="attrib" id="attrib">

@@ -45,16 +45,33 @@ would 404 every asset — use `map.dibotak.com`, not a subpath.
 
 ## What it does
 
-- **Sidebar with two tabs**, toggled by the **Daftar** button sitting beside the
-  search bar on the same row. *Wilayah* lists all 11 kecamatan with their child
-  counts; opening one appends its kelurahan underneath, and the current
-  selection stays highlighted as you click through the map. *Jalan* lists the
-  77 official ruas grouped by class, collapsible.
-- **Two ways to shrink the panel.** The chevron in the sidebar header
-  **minimises** it — the tab row stays, the list goes, and the map is clear
-  behind it. `✕` closes it entirely; `Esc` backs out one level at a time
-  (restore, then close). The Daftar button doubles as collapse/restore while
-  the panel is open, so the top row's layout never changes width.
+- **Sidebar with two tabs**, opened by the **icon-only** button beside the
+  search bar on the same row. The button carries no text — its `aria-label`
+  ("Buka daftar wilayah dan jalan" / "Tutup daftar") is the only name, and it
+  flips with state. *Wilayah* lists all 11 kecamatan with their child counts;
+  opening one appends its kelurahan underneath, and the current selection stays
+  highlighted as you click through the map. *Jalan* lists the 77 official ruas
+  grouped by class, collapsible.
+- **Search fills the row.** The top bar is two grid columns — the icon button,
+  then the search stretching across everything left over — so the input takes
+  ~80% of a phone's width and ~94% on desktop. It is no longer centred: with
+  the label gone and the theme toggle moved into the sidebar there is nothing to
+  balance, and centring would throw away the width it just gained.
+- **One way to shrink the panel:** `✕` closes it, and `Esc` closes it. There is
+  no panel minimise — see the answer card below.
+- **The answer card has its own minimise.** The chevron in the card's title row
+  collapses it to just the name, which is what actually gets the map back on a
+  phone, where the card covers a third of the screen. The state lives on `<body>`,
+  so picking another area does not pop it open again mid-browse, and it survives
+  drill-down and theme changes. The card is `position: fixed`: as an absolute box
+  it anchored to `<body>`, whose height is content-driven (every other element
+  on the page is absolutely positioned), so collapsing the card dragged itself
+  off the top of the screen.
+- **Theme and GPS live in the sidebar.** The light/dark toggle sits in the
+  sidebar header instead of inside the search box, where it ate ~44px of input
+  width. "Cari lokasi saya" is a row under *Wilayah*, with its result next to it
+  — it used to be a floating banner directly under the search bar that pushed
+  the map down on a phone.
 - **Both lists scroll independently.** Each panel is its own scroll container,
   so the 77 ruas and the 11+7 area rows are both fully reachable — including on
   a phone, where the panel is capped at 78dvh so a strip of map always shows
@@ -75,9 +92,9 @@ would 404 every asset — use `map.dibotak.com`, not a subpath.
   Kecamatan Cimanggis first, then its children.
 - **Answer card** always shows the full chain — Kelurahan › Kecamatan ›
   Kabupaten › Provinsi — plus the BPS code with a copy button.
-- **"Cari lokasi saya"** uses your GPS position to tell you which area you're
-  standing in, at whichever level is open.
-- **Light/dark theme** swapping the whole basemap, remembered across visits.
+- **Light/dark theme** swapping the whole basemap, remembered across visits. The
+  toggle keeps the same icon-swap rules it had in the search box, and the
+  current selection, zoom, and selected road all survive the style swap.
 - **Deep links**: `#id3276031005` for a kelurahan, `#kec/id3276040` for a
   kecamatan. Both are shareable and survive a reload.
 
