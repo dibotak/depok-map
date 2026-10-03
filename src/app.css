@@ -339,10 +339,36 @@ body.card-collapsed .card { padding-bottom: 10px; }
   padding: 8px 8px 8px 10px;
   border-bottom: 1px solid var(--border);
   flex: none;
+  /* Four tab labels plus a 40px theme button and a 40px close button do not
+     fit on one 316px row: the tabs alone need ~309px, so the theme button was
+     pushed on top of the tab strip. The strip wraps to its own line via
+     flex-wrap and takes the full width, so the buttons keep their place and
+     the tabs get the room they need. */
+  flex-wrap: wrap;
 }
-.side-tabs { display: flex; gap: 4px; flex: 1; min-width: 0; }
+.side-tabs {
+  display: flex; gap: 2px;
+  /* min-width:0 is what allows a flex child to shrink below its content; the
+     tabs are the only part of this row allowed to give way, because the theme
+     and close buttons are 40px tap targets that must stay put and visible.
+     Without it four tabs overflow by ~76px and push the theme button on top of
+     the tab strip. */
+  /* order:0 on a full-width basis takes the whole first line. */
+  flex: 1 1 100%; min-width: 0;
+  order: 0;
+  /* Re-add the original 8px head gap above the buttons. */
+  margin-bottom: 8px;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+/* The row scrolls rather than squashing the labels to nothing; the is-on tab is
+   scrolled into view on switch so the active tab is never hidden off-screen. */
+.side-tabs::-webkit-scrollbar { display: none; }
 .side-tab {
-  flex: 1; height: 30px; padding: 0 8px;
+  /* flex-shrink:0 keeps every label readable at its natural width; the parent
+     scrolls instead of clipping the labels. */
+  flex: 0 0 auto; height: 30px; padding: 0 6px;
+  white-space: nowrap;
   font: inherit; font-size: 12.5px; font-weight: 580; color: var(--muted);
   background: transparent; border: 1px solid transparent; border-radius: 7px;
   cursor: pointer;
@@ -354,7 +380,7 @@ body.card-collapsed .card { padding-bottom: 10px; }
   border-color: var(--border);
 }
 .side-close {
-  flex: none; width: 30px; height: 30px;
+  order: 2; flex: none; width: 30px; height: 30px;
   display: flex; align-items: center; justify-content: center;
   color: var(--muted); background: transparent;
   border: 1px solid transparent; border-radius: 7px; cursor: pointer;
@@ -605,7 +631,9 @@ body.side-open .side-toggle {
 /* Moved out of the search box: it was eating ~44px of input width, and the
    input is the primary control on a phone. */
 .side-theme {
-  flex: none; width: 30px; height: 30px;
+  order: 1; flex: none; width: 30px; height: 30px;
+  /* pushes the two buttons to the right edge of the second line */
+  margin-left: auto;
   display: flex; align-items: center; justify-content: center;
   color: var(--muted); background: transparent;
   border: 1px solid transparent; border-radius: 7px; cursor: pointer;

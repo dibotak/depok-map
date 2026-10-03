@@ -1427,6 +1427,7 @@ const TABS = [
 ];
 
 function setTab(which) {
+  let active = null;
   for (const t of TABS) {
     const on = t.id === which;
     const tabEl = document.getElementById(t.tab);
@@ -1434,8 +1435,15 @@ function setTab(which) {
     if (tabEl) {
       tabEl.classList.toggle('is-on', on);
       tabEl.setAttribute('aria-selected', String(on));
+      if (on) active = tabEl;
     }
     if (panelEl) panelEl.hidden = !on;
+  }
+  // Four tabs do not fit beside the theme and close buttons on a phone, so the
+  // strip scrolls. Bring the chosen tab into view, otherwise the last one can be
+  // active while sitting off-screen.
+  if (active && active.scrollIntoView) {
+    active.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }
 }
 for (const t of TABS) {
@@ -2056,10 +2064,29 @@ function renderSchoolCard(s) {
       + '<span class="lvl">Wilayah</span><span class="nm leg">Batas Kota Depok</span></div>';
   }
 
+  // At least three facts, so the card never reads as a title with nothing in
+  // it. Every field is optional, so fall back through progressively more
+  // specific and then to the least specific, rather than dropping the row.
   const facts = [];
-  facts.push(['Koordinat', `${s.lat.toFixed(5)}, ${s.lon.toFixed(5)}`]);
+  if (s.address) {
+    facts.push(['Alamat', esc(s.address)]);
+  } else if (s.street) {
+    // Most of these 30 have no street tag at all, so the village the school
+    // sits in is the honest address fallback -- and it is already computed for
+    // the ladder, so it costs nothing.
+    const where = placeForSchool(s.lon, s.lat);
+    facts.push(['Alamat', esc(s.street + (where ? `, ${where.village}` : ''))]);
+  } else {
+    const where = placeForSchool(s.lon, s.lat);
+    if (where) facts.push(['Alamat', esc(`${where.village}, ${where.district}`)]);
+  }
+  if (s.grades) facts.push(['Kelas', esc(s.grades).replace('-', '–')]);
   if (s.website) facts.push(['Web', esc(s.website)]);
   if (s.phone) facts.push(['Telp', esc(s.phone)]);
+  if (s.operator) facts.push(['Pengelola', esc(s.operator)]);
+  facts.push(['Koordinat', `${s.lat.toFixed(5)}, ${s.lon.toFixed(5)}`]);
+  // Provenance last: this is what the card is resting on, and it is also the
+  // least useful thing for someone choosing a school.
   facts.push(['Data', `OpenStreetMap <span class="code">${s.osm_type}/${s.osm_id}</span>`]);
   sdFacts.className = 'kids trans-facts';
   sdFacts.innerHTML = facts
@@ -2181,7 +2208,7 @@ if (schoolGroups) {
     } else {
       highlightSchool(key);
     }
-    if (window.matchMedia('(max-width: 900px)').matches) closeSidebar();
+    if (window.matchMedia('(max-width: 760px)').matches) setSidebar(false);
   });
 }
 

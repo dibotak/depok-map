@@ -31,10 +31,14 @@
   <aside class="sidebar" id="sidebar">
     <div class="side-head">
       <div class="side-tabs" role="tablist">
-        <button class="side-tab is-on" id="tab-area" type="button">Wilayah</button>
-        <button class="side-tab" id="tab-road" type="button">Jalan</button>
+      <button class="side-tab is-on" id="tab-area" role="tab" aria-selected="true"
+              aria-controls="panel-area" type="button">Wilayah</button>
+      <button class="side-tab" id="tab-road" role="tab" aria-selected="false"
+              aria-controls="panel-road" type="button">Jalan</button>
+      <button class="side-tab" id="tab-transport" role="tab" aria-selected="false"
+              aria-controls="panel-transport" type="button">Transport</button>
       <button class="side-tab" id="tab-school" role="tab" aria-selected="false"
-        <button class="side-tab" id="tab-transport" type="button">Transportasi</button>
+              aria-controls="panel-school" type="button">SMA/SMK</button>
       </div>
       <button id="theme" class="side-theme" type="button">t</button>
       <button class="side-close" id="side-close" type="button">x</button>

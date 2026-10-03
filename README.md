@@ -45,13 +45,23 @@ would 404 every asset — use `map.dibotak.com`, not a subpath.
 
 ## What it does
 
-- **Sidebar with two tabs**, opened by the **icon-only** button beside the
+- **Sidebar with four tabs**, opened by the **icon-only** button beside the
   search bar on the same row. The button carries no text — its `aria-label`
   ("Buka daftar wilayah dan jalan" / "Tutup daftar") is the only name, and it
   flips with state. *Wilayah* lists all 11 kecamatan with their child counts;
   opening one appends its kelurahan underneath, and the current selection stays
   highlighted as you click through the map. *Jalan* lists the 77 official ruas
-  grouped by class, collapsible.
+  grouped by class, collapsible. *Transport* lists angkot routes grouped by
+  trayek. *SMA/SMK* lists 30 secondary schools.
+  - **The tab strip wraps.** `.side-head` is `flex-wrap: wrap` and `.side-tabs`
+    is `flex: 1 1 100%`, so the four labels take the whole first line (~346px of
+    a 316px sidebar's inner width, which is why they previously overflowed) and
+    the theme and close buttons sit right-aligned on a second line. Before this,
+    `.side-tab { flex: 1 }` with no `min-width: 0` could not shrink below its
+    content, so the labels pushed the 40px theme button on top of the tab strip.
+    The tab label *Transportasi* was also shortened to *Transport* (106px → 62px)
+    for the same reason. `setTab()` calls `scrollIntoView` so the active tab is
+    visible even if the strip does scroll on a narrower phone.
 - **Search fills the row.** The top bar is two grid columns — the icon button,
   then the search stretching across everything left over — so the input takes
   ~80% of a phone's width and ~94% on desktop. It is no longer centred: with
@@ -143,6 +153,40 @@ scripts/              data pipeline
 shots/                screenshots (gitignored)
 .venv-build/          pip target for Shapely (gitignored)
 ```
+
+## Secondary schools
+
+`scripts/build-schools.py` → `src/schools.js` (30 schools). Two queries are
+unioned server-side: `amenity=school|college|university` over the Kota Depok
+bbox, **and** a `name~"SMAN|SMKN|SMAS|SMKS|SMA|SMK"` search. The second exists
+because `amenity` alone is not complete — a mapper who abbreviated the name and
+tagged the feature `amenity=college`, or left `amenity` off, is invisible to the
+first. It currently returns 17 extra features, all of which fall outside the city
+clip (`addr:city=Bogor` — Sawangan, Leuwiliang), so the count is unchanged.
+
+Level comes from the **name**, because `isced:level` is filled in on only 10 of
+the ~900 features returned. Two corrections matter:
+
+- `SMAS`/`SMKS` are how private schools are commonly abbreviated. Without those
+  two patterns 17 genuine schools are silently dropped.
+- `school:type_idn` **outranks the name** where present. "SMP Al
+  Muhtadin/SMA Muhamadiyah" is tagged `smp` — a combined campus whose name lists
+  several levels and matched whichever pattern came first. A bare non-secondary
+  tag (`smp`, `sd`) now drops the feature; a multi-level tag (`sd, smp, sma`) is
+  a real combined campus and stays.
+
+Campuses are deduplicated on a canonical name plus a 400m radius: "SMA Negeri 1
+Kota Depok" arrives as 7 building polygons within 70m, and the same school is
+also tagged "SMA Negeri 1 Depok". 8 rows collapse, 39 → 30 after the `smp` fix.
+
+The detail card always shows **at least three facts** — Alamat, Koordinat, Data
+(OSM id) — falling back through `addr:full` → `addr:street` → the village/district
+already resolved for the ladder, because only 8 of the 30 carry a street tag.
+Where present it also shows Kelas, Web, Telp and Pengelola.
+
+**Limit:** this is OSM name matching, not the official register, and OSM coverage
+of Depok's SMAs is uneven. A school mapped without its level in the name will
+not appear.
 
 ## Regenerating the boundary data
 

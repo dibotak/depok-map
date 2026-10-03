@@ -59,21 +59,41 @@ MIRRORS = [
 # Kota Depok administrative extent, from the same boundary file the map draws.
 BBOX = "-6.461283,106.716747,-6.314414,106.918848"
 
+# Two queries, unioned, because amenity=school alone is not a complete filter:
+# a mapper who wrote "SMAN 3" or "SMKS Kesehatan Logos" and tagged the feature
+# amenity=college, or left amenity off entirely, would be missed by the first
+# branch alone. Overpass evaluates the union server-side, so this costs one
+# request.
+#
+# Measured: the name branch currently returns 17 extra features, and all 17 fall
+# outside the city clip (they carry addr:city=Bogor --Sawangan, Leuwiliang and
+# the Bogor side of the border). So the count is unchanged at 30, but the query
+# is not relying on every mapper having filled in amenity correctly.
+#
+# The SMAN/SMKS abbreviations are the reason the name branch matters: "SMAS" and
+# "SMKS" are how private schools are commonly abbreviated, and neither is in the
+# amenity value at all.
 QUERY = (
     '[out:json][timeout:180];'
-    'nwr["amenity"~"^(school|college|university)$"]'
-    "(%s);"
-    "out center tags;" % BBOX
+    '('
+    '  nwr["amenity"~"^(school|college|university)$"](%(bbox)s);'
+    '  nwr["name"~"(^|\\s)(SMAN|SMKN|SMAS|SMKS|SMA|SMK)(\\s|$|NEGERI)",i](%(bbox)s);'
+    ');'
+    'out center tags;' % {"bbox": BBOX}
 )
 
 # Ordered most-specific first: "SMA Negeri 3" must not be caught by the plain
 # "SMA" rule, and "MA" must not swallow the "ALMA"/"NAMA" fragments that a bare
 # substring match would hit.
 LEVELS = [
-    ("SMA", "negeri", r"\bSMA\s*NEGERI\b|\bSMAN\s"),
-    ("SMA", "swasta", r"\bSMA\b"),
-    ("SMK", "negeri", r"\bSMK\s*NEGERI\b|\bSMKN\s"),
-    ("SMK", "swasta", r"\bSMK\b"),
+    # SMAN/SMKN are the public forms; SMAS/SMKS are how many mappers abbreviate
+    # the private ones ("SMAS Dwiwarna", "SMKS Kesehatan Logos"). Leaving those
+    # two forms out dropped 17 real schools from the list. Negeri must be tried
+    # before the bare abbreviation, or "SMA Negeri 3" matches as private.
+    ("SMA", "negeri", r"\bSMA\s*NEGERI\b|\bSMAN\b|\bSMAN\s"),
+    ("SMA", "swasta", r"\bSMA\b|\bSMAS\b"),
+    ("SMK", "negeri", r"\bSMK\s*NEGERI\b|\bSMKN\b"),
+    ("SMK", "swasta", r"\bSMK\b|\bSMKS\b"),
     ("MA", "swasta", r"\bMA\s+AL[IY]YAH\b|\bMADRASAH\s+ALIYAH\b|\bMTS?\.?\s+AL[IY]YAH\b"),
     # A bare "MA" would match any word containing those two letters, so require
     # it as a standalone token and require an Islamic marker nearby.
@@ -169,7 +189,34 @@ def haversine(a, b):
     return 2 * r * math.asin(math.sqrt(h))
 
 
-def classify(name):
+def classify(name, type_idn=None):
+    """Level and sector for one feature.
+
+    `school:type_idn` wins over the name when present. A name like "SMP Al
+    Muhtadin/SMA Muhamadiyah" lists several levels and matches whichever pattern
+    comes first, which is how an SMP-typed campus ended up filed as an SMA; the
+    explicit tag is the mapper's considered answer. Only exact single-level tags
+    are trusted -- "sd, smp, sma" is a combined campus and stays name-matched,
+    since it genuinely offers all three.
+    """
+    if type_idn:
+        tid = type_idn.strip().lower()
+        if tid in ("sma", "sman"):
+            return "SMA", None
+        if tid in ("smk", "smkn"):
+            return "SMK", None
+        if re.search(r"\bma\b", tid):
+            return "MA", "swasta"
+        # A single non-secondary level means this is not a secondary school at
+        # all, whatever the name says. A multi-level tag ("sd, smp, sma") is a
+        # combined campus that genuinely offers secondary, so it falls through
+        # to the name instead.
+        if re.fullmatch(r"sd|smp|paud|tk|tb", tid):
+            return None, None
+        if re.fullmatch(r"(sd|smp|paud|tk|tb)(\s*,\s*(sd|smp|paud|tk|tb))+", tid) \
+                and not re.search(r"sma|smk|ma\b", tid):
+            return None, None
+
     up = (name or "").upper()
     for level, sector, pat in LEVELS:
         if re.search(pat, up):
@@ -232,6 +279,10 @@ def dedupe(items):
                 hit["website"] = it["website"]
             if it.get("phone") and not hit.get("phone"):
                 hit["phone"] = it["phone"]
+            for f in ("address", "street", "postcode", "jenjang", "type_idn",
+                      "grades", "operator"):
+                if it.get(f) and not hit.get(f):
+                    hit[f] = it[f]
             if len(it["osm_tags"]) > len(hit["osm_tags"]):
                 hit["osm_tags"] = it["osm_tags"]
                 hit["name"] = it["name"]
@@ -254,10 +305,15 @@ def main():
         if not name:
             skipped_noname += 1
             continue
-        level, sector = classify(name)
+        level, sector = classify(name, tags.get("school:type_idn"))
         if not level:
             skipped_level += 1
             continue
+        # classify() can return a level with no sector when school:type_idn
+        # decided it; an SMA tag says nothing about public or private.
+        if sector is None:
+            sector = "negeri" if re.search(r"\bNEGERI\b|\bSMAN\b|\bSMKN\b", name.upper()) \
+                else "swasta"
         pt = point_of(e)
         if not pt:
             continue
@@ -278,6 +334,19 @@ def main():
             lon=round(lon, 6),
             website=tags.get("website") or tags.get("contact:website") or None,
             phone=tags.get("phone") or tags.get("contact:phone") or None,
+            # addr:full is the one address tag most Indonesian school mappers
+            # fill in (85 of the ~93 that carry any address), and it is the
+            # third fact the detail card needs. addr:street alone appears on 8.
+            address=tags.get("addr:full") or None,
+            street=tags.get("addr:street") or None,
+            postcode=tags.get("addr:postcode") or None,
+            # Indonesian mappers use jenjang (1-6) and school:type_idn ("sma",
+            # "smp") where they bother; they are present on only a few of these
+            # 31, but where present they are authoritative and outrank the name.
+            jenjang=tags.get("jenjang") or None,
+            type_idn=tags.get("school:type_idn") or None,
+            grades=tags.get("grades") or None,
+            operator=tags.get("operator") or None,
             isced=tags.get("isced:level") or None,
             operator_type=tags.get("operator:type") or None,
             osm_tags=tags,
