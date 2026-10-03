@@ -154,6 +154,25 @@ shots/                screenshots (gitignored)
 .venv-build/          pip target for Shapely (gitignored)
 ```
 
+## Repo layout
+
+This repository is the **shipped app only** -- the files a visitor's browser
+downloads, plus the scripts that generate them. It is public, so nothing that is
+still being figured out belongs here.
+
+```
+index.html          the app
+src/                app.js, styles, and the generated *.js payloads
+public/data/        boundary GeoJSON
+vendor/             MapLibre, vendored so there is no build step
+scripts/            build + fetch scripts for the payloads in src/
+```
+
+Design notes, the offline test harness (`harness.html`), the canonical-data-model
+experiment, and one-off endpoint probes live in a separate private checkout at
+`~/projects/depok-map-lab`, alongside this one. The lab reads `src/*.js` from
+here; nothing here reads from the lab.
+
 ## Secondary schools
 
 `scripts/fetch-sekolahkita.py` + `scripts/build-schools-sekolahkita.py` ->

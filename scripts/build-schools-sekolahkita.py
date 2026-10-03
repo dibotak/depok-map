@@ -185,13 +185,20 @@ def main() -> None:
         stats["placed" if placed else "unplaced"] += 1
 
         jenjang = row.get("bentuk_pendidikan") or ""
-        status = (row.get("status_sekolah") or "").upper()
+        # status_sekolah is "NEGERI"/"SWASTA". Lowercase it: the map UI groups and
+        # compares on it, and the canonical model's enum is lowercase. label and
+        # operator still title-case for display.
+        status = (row.get("status_sekolah") or "").strip().lower()
         out.append({
             "key": row["sekolah_id"],
             "npsn": row.get("npsn") or "",
             "name": (row.get("nama") or "").strip(),
             "label": LABELS.get((jenjang, status), f"{jenjang} {status.title()}".strip()),
-            "level": "MA" if jenjang == "MA" else "SMA/SMK",
+            # jenjang is the portal's own bentuk_pendidikan ("SMA"/"SMK"/"MA").
+            # An earlier version collapsed these to "SMA/SMK", which was lossy and
+            # wrong for SMK. Level and jenjang are the same value; "level" is the
+            # field name the map UI and the canonical model both read.
+            "level": jenjang,
             "jenjang": jenjang,
             "status": status,
             "operator": status.title(),
