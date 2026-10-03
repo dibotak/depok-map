@@ -58,6 +58,8 @@
               aria-controls="panel-road" type="button">Jalan</button>
       <button class="side-tab" id="tab-transport" role="tab" aria-selected="false"
               aria-controls="panel-transport" type="button">Transportasi</button>
+      <button class="side-tab" id="tab-school" role="tab" aria-selected="false"
+              aria-controls="panel-school" type="button">SMA/SMK</button>
     </div>
     <!-- Theme lives here rather than in the search bar, so the input gets the
          full width of the top row. -->
@@ -126,6 +128,22 @@
       <div id="transport-groups"></div>
     </div>
   </div>
+<!-- secondary schools ------------------------------------------------- -->
+  <div class="side-panel" id="panel-school" role="tabpanel"
+       aria-labelledby="tab-school" hidden>
+    <!-- All points at once, so the gaps in coverage are visible rather than
+         hidden one-behind-another. -->
+    <div class="side-locate">
+      <label class="trans-all">
+        <input type="checkbox" id="school-all">
+        <span>Tampilkan semua sekolah</span>
+      </label>
+    </div>
+    <div class="side-scroll" id="school-scroll">
+      <p class="side-note" id="school-note"></p>
+      <div id="school-groups"></div>
+    </div>
+  </div>
 </aside>
 
 <!-- selected route banner -------------------------------------------- -->
@@ -162,6 +180,29 @@
   </svg>
   <span></span>
 </button>
+
+<!-- selected school detail --------------------------------------------- -->
+<!-- Third user of the .card slot, alongside the area card and the route card.
+     Any one of the three can be up; the others stand down, so this sits in the
+     same position and inherits the same minimise behaviour. -->
+<div class="card trans-detail" id="school-detail" hidden>
+  <div class="card-top">
+    <div class="eyebrow" id="sd-eyebrow"></div>
+    <div class="card-name" id="sd-name"></div>
+    <button class="card-min" id="sd-min" type="button"
+            aria-label="Perkecil info" title="Perkecil info">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M6 9l6 6 6-6"/>
+      </svg>
+    </button>
+  </div>
+  <div class="ladder" id="sd-ladder"></div>
+  <div class="kids" id="sd-facts"></div>
+  <div class="card-foot">
+    <span class="code" id="sd-source"></span>
+  </div>
+</div>
 
 <!-- answer card ------------------------------------------------------- -->
 <div class="card" id="card"></div>
@@ -210,6 +251,7 @@
 <script src="/src/data.js"></script>
 <script src="/src/roads.js"></script>
 <script src="/src/transport.js"></script>
+<script src="/src/schools.js"></script>
 <script src="/src/app.js"></script>
 </body>
 </html>

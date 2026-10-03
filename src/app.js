@@ -29,7 +29,7 @@ const META = DATA.meta;
 // district_code are both unique across their level, so they are the only safe
 // keys. `KEL_BY_NAME` is kept solely for search-result labels, and reads the
 // full list so duplicates can be shown separately.
-const KEL_BY_CODE = new Map(KEL.map(f => [f.properties.village_code, f]));
+const KEL_BY_CODE = new Map(KEL.map(f => [f.properties.village_code, f, { key: 'school', panel: 'panel-school', tab: 'tab-school', note: null }]));
 const KEL_BY_NAME = new Map();
 for (const f of KEL) {
   const n = f.properties.village;
@@ -67,12 +67,16 @@ const PALETTE = {
     // the orange road highlight, so a selected route can't be mistaken for a
     // selected road or a selected kecamatan.
     trans: '#6d28d9',
+    // Schools are teal: a fourth family, so a school pin can never be read as a
+    // selected kecamatan (green), road (orange) or route (violet).
+    school: '#0f766e',
   },
   dark: {
     sel: '#6fd39b', selFill: '#6fd39b', peer: '#3f7f5c', peerFill: '#38745a',
     line: '#4a5a4e', ink: '#d8e6dc', halo: '#10130e',
     road: '#fb923c',
     trans: '#a78bfa',
+    school: '#2dd4bf',
   },
 };
 
@@ -100,6 +104,11 @@ const SRC_TRANS = 'rute';
    from the selected route so the two can be shown together -- the overlay is
    the context, the selected route is drawn on top of it. */
 const SRC_TRANS_ALL = 'rute-semua';
+/* Secondary schools, in two sources for the same reason the transport routes
+   are: the selected school's marker is the subject, the show-all layer is the
+   context underneath it. */
+const SRC_SCHOOL = 'sekolah-terpilih';
+const SRC_SCHOOL_ALL = 'sekolah-semua';
 let mapReady = false;
 
 /**
@@ -175,6 +184,12 @@ function paint() {
     ['trans-all-halo', 'line-color', p.trans],
     ['trans-all-label', 'text-halo-color', p.trans],
     ['trans-all-label', 'text-color', p.halo],
+    ['school-all', 'circle-color', p.school],
+    ['school-all', 'circle-stroke-color', p.halo],
+    ['school-sel', 'circle-color', p.school],
+    ['school-sel', 'circle-stroke-color', p.halo],
+    ['school-sel-label', 'text-color', p.school],
+    ['school-sel-label', 'text-halo-color', p.halo],
   ]) {
     if (map.getLayer(id)) map.setPaintProperty(id, prop, val);
   }
@@ -378,6 +393,56 @@ function addLayers() {
       },
     });
   }
+  // Secondary schools. Same two-source shape as the transport routes: a thin
+  // context layer of every school, and the selected one on top of it.
+  for (const id of [SRC_SCHOOL_ALL, SRC_SCHOOL]) {
+    if (!map.getSource(id)) {
+      map.addSource(id, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    }
+  }
+  if (!map.getLayer('school-all')) {
+    map.addLayer({
+      id: 'school-all', type: 'circle', source: SRC_SCHOOL_ALL,
+      paint: {
+        'circle-radius': ['interpolate', ['linear'], ['zoom'],
+          11, 3, 13, 4.5, 16, 7],
+        'circle-color': PALETTE[state.theme].school,
+        'circle-opacity': 0.62,
+        'circle-stroke-width': 1,
+        'circle-stroke-color': PALETTE[state.theme].halo,
+        'circle-stroke-opacity': 0.5,
+      },
+    });
+  }
+  if (!map.getLayer('school-sel')) {
+    map.addLayer({
+      id: 'school-sel', type: 'circle', source: SRC_SCHOOL,
+      paint: {
+        'circle-radius': ['interpolate', ['linear'], ['zoom'],
+          11, 5, 13, 8, 16, 12],
+        'circle-color': PALETTE[state.theme].school,
+        'circle-stroke-width': 2.5,
+        'circle-stroke-color': PALETTE[state.theme].halo,
+      },
+    });
+    map.addLayer({
+      id: 'school-sel-label', type: 'symbol', source: SRC_SCHOOL,
+      layout: {
+        'text-field': ['get', 'name'],
+        'text-size': 12,
+        'text-font': ['Noto Sans Regular'],
+        'text-anchor': 'top',
+        'text-offset': [0, 1.1],
+        'text-max-width': 14,
+        'text-allow-overlap': false,
+      },
+      paint: {
+        'text-color': PALETTE[state.theme].school,
+        'text-halo-color': PALETTE[state.theme].halo,
+        'text-halo-width': 2,
+      },
+    });
+  }
   if (!map.getLayer('trans-sel')) {
     map.addLayer({
       id: 'trans-sel-halo', type: 'line', source: SRC_TRANS,
@@ -539,6 +604,7 @@ function goCity(opts = {}) {
 }
 
 function openDistrict(code, opts = {}) {
+  renderSchoolCard(null);  // area selection supersedes a school
   renderRouteCard(null);   // area selection supersedes a route
   const kec = KEC_BY_CODE.get(code);
   if (!kec) return;
@@ -557,6 +623,7 @@ function openDistrict(code, opts = {}) {
 
 /** Selects a kelurahan by village_code. Names are ambiguous (see KEL_BY_CODE). */
 function selectVillage(code, opts = {}) {
+  renderSchoolCard(null);  // area selection supersedes a school
   renderRouteCard(null);   // area selection supersedes a route
   const f = KEL_BY_CODE.get(code);
   if (!f) return;
@@ -579,6 +646,7 @@ function selectVillage(code, opts = {}) {
 }
 
 function selectDistrict(name, opts = {}) {
+  renderSchoolCard(null);  // area selection supersedes a school
   renderRouteCard(null);   // area selection supersedes a route
   const f = KEC_BY_NAME.get(name);
   if (f) openDistrict(f.properties.district_code, opts);
@@ -1052,6 +1120,22 @@ function restoreLayers() {
         map.getSource(SRC_TRANS).setData(transportFeatures(r));
       }
     }
+    if (selectedSchool) {
+      const sc = SCHOOLS.schools.find(x => x.key === selectedSchool);
+      if (sc) {
+        map.getSource(SRC_SCHOOL).setData(
+          { type: 'FeatureCollection', features: [schoolFeature(sc)] });
+      }
+    }
+    if (showAllSchools) {
+      const ss = map.getSource(SRC_SCHOOL_ALL);
+      if (ss) {
+        ss.setData({
+          type: 'FeatureCollection',
+          features: SCHOOLS.schools.map(schoolFeature),
+        });
+      }
+    }
     if (showAllAngkot) {
       const src = map.getSource(SRC_TRANS_ALL);
       if (src) {
@@ -1339,6 +1423,7 @@ const TABS = [
   { id: 'area', tab: 'tab-area', panel: 'panel-area' },
   { id: 'road', tab: 'tab-road', panel: 'panel-road' },
   { id: 'transport', tab: 'tab-transport', panel: 'panel-transport' },
+  { id: 'school', tab: 'tab-school', panel: 'panel-school' },
 ];
 
 function setTab(which) {
@@ -1692,6 +1777,13 @@ const tdFacts = document.getElementById('td-facts');
 const tdSource = document.getElementById('td-source');
 const tdMin = document.getElementById('td-min');
 const tdDetail = document.getElementById('trans-detail');
+const sdDetail = document.getElementById('school-detail');
+const sdEyebrow = document.getElementById('sd-eyebrow');
+const sdName = document.getElementById('sd-name');
+const sdLadder = document.getElementById('sd-ladder');
+const sdFacts = document.getElementById('sd-facts');
+const sdSource = document.getElementById('sd-source');
+const sdMin = document.getElementById('sd-min');
 
 function renderRouteCard(route) {
   if (!route) { tdDetail.hidden = true; return; }
@@ -1889,6 +1981,211 @@ function toggleAllAngkot(on) {
   }
 }
 
+/* ---------- secondary schools (SMA/SMK/MA) ---------- */
+/* Same three pieces as the transport layer: a list, a selected marker with a
+   detail card, and a show-all overlay. Kept separate rather than merged into
+   one generic "points" feature because the two have different provenance --
+   schools come from OSM places, routes come from OSM relations plus Dishub. */
+
+const SCHOOLS = window.DEPOK_SCHOOLS || { schools: [], counts: {} };
+const schoolAllBox = document.getElementById('school-all');
+const schoolNote = document.getElementById('school-note');
+const schoolGroups = document.getElementById('school-groups');
+let selectedSchool = null;
+let showAllSchools = false;
+
+const SCHOOL_ORDER = ['SMA Negeri', 'SMA Swasta', 'SMK Negeri', 'SMK Swasta', 'Madrasah Aliyah'];
+
+function schoolFeature(s) {
+  return {
+    type: 'Feature',
+    geometry: { type: 'Point', coordinates: [s.lon, s.lat] },
+    properties: {
+      name: s.name, label: s.label, key: s.key,
+      website: s.website || '', phone: s.phone || '',
+    },
+  };
+}
+
+/** Which village and district a school sits in, by point-in-polygon.
+ *
+ *  Schools are points, so unlike a route corridor they really do belong to one
+ *  village -- this is exact, not an approximation. */
+function placeForSchool(lon, lat) {
+  for (const f of KEL) {
+    const g = f.geometry;
+    const polys = g.type === 'Polygon' ? [g.coordinates]
+      : g.type === 'MultiPolygon' ? g.coordinates : [];
+    for (const poly of polys) for (const ring of poly) {
+      let inside = false;
+      for (let i = 0, n = ring.length - 1; i < n; i++) {
+        const [x1, y1] = ring[i], [x2, y2] = ring[i + 1];
+        if ((y1 > lat) !== (y2 > lat) &&
+            lon < (x2 - x1) * (lat - y1) / (y2 - y1) + x1) inside = !inside;
+      }
+      if (inside) return f.properties;
+    }
+  }
+  return null;
+}
+
+function renderSchoolCard(s) {
+  if (!s) { sdDetail.hidden = true; return; }
+  sdDetail.hidden = false;
+  sdEyebrow.textContent = s.label;
+  sdName.textContent = s.name;
+
+  // Ladder: village -> district -> city, the same hierarchy the area card shows.
+  const place = placeForSchool(s.lon, s.lat);
+  sdLadder.innerHTML = '';
+  if (place) {
+    for (const [lvl, val] of [['Kelurahan', place.village], ['Kecamatan', place.district]]) {
+      if (!val) continue;
+      const row = document.createElement('div');
+      row.className = 'rung';
+      row.innerHTML = '<i class="dot"></i><span class="lvl"></span><span class="nm leg"></span>';
+      row.querySelector('.lvl').textContent = lvl;
+      row.querySelector('.nm').textContent = val;
+      sdLadder.append(row);
+    }
+  }
+  // No village matched: every kept school is inside the city clip, so this only
+  // happens on a boundary sliver. Say so rather than showing an empty ladder.
+  if (!sdLadder.children.length) {
+    sdLadder.innerHTML = '<div class="rung"><i class="dot"></i>'
+      + '<span class="lvl">Wilayah</span><span class="nm leg">Batas Kota Depok</span></div>';
+  }
+
+  const facts = [];
+  facts.push(['Koordinat', `${s.lat.toFixed(5)}, ${s.lon.toFixed(5)}`]);
+  if (s.website) facts.push(['Web', esc(s.website)]);
+  if (s.phone) facts.push(['Telp', esc(s.phone)]);
+  facts.push(['Data', `OpenStreetMap <span class="code">${s.osm_type}/${s.osm_id}</span>`]);
+  sdFacts.className = 'kids trans-facts';
+  sdFacts.innerHTML = facts
+    .map(([k, v]) => `<div class="trans-fact"><dt>${k}</dt><dd>${v}</dd></div>`).join('');
+
+  sdSource.textContent = SCHOOLS.source || '';
+  const expanded = !document.body.classList.contains('card-collapsed');
+  sdMin.setAttribute('aria-label', expanded ? 'Perkecil info' : 'Perluas info');
+  sdMin.title = expanded ? 'Perkecil info' : 'Perluas info';
+}
+
+sdMin.addEventListener('click', () => {
+  document.body.classList.toggle('card-collapsed');
+  relayoutOverlays();
+});
+
+/** Draw the selected school, zoom to it, and show its card. */
+function highlightSchool(key) {
+  selectedSchool = key;
+  if (!map.getSource(SRC_SCHOOL)) return;
+  const s = SCHOOLS.schools.find(x => x.key === key);
+  const src = map.getSource(SRC_SCHOOL);
+  if (!s) {
+    src.setData({ type: 'FeatureCollection', features: [] });
+    renderSchoolCard(null);
+    // Hand the screen back to the area card, the same way deselecting a route
+    // does. Leaving it hidden would strand the user with nothing in the slot.
+    card.hidden = false;
+    renderCard();
+    renderSchools();
+    relayoutOverlays();
+    return;
+  }
+  src.setData({ type: 'FeatureCollection', features: [schoolFeature(s)] });
+  map.flyTo({ center: [s.lon, s.lat], zoom: Math.max(map.getZoom(), 15), duration: 700 });
+  // Same stand-aside as a route: two .cards in one slot overlap.
+  card.hidden = true;
+  renderRouteCard(null);
+  renderSchoolCard(s);
+  renderSchools();
+  relayoutOverlays();
+}
+
+/** Show every school at once. Points, so this is cheap -- no fitBounds guard
+ *  beyond the obvious one, unlike the route overlay. */
+function toggleAllSchools(on) {
+  showAllSchools = !!on;
+  if (!map.getSource(SRC_SCHOOL_ALL)) return;
+  const src = map.getSource(SRC_SCHOOL_ALL);
+  if (!showAllSchools) {
+    src.setData({ type: 'FeatureCollection', features: [] });
+    return;
+  }
+  const features = SCHOOLS.schools.map(schoolFeature);
+  src.setData({ type: 'FeatureCollection', features });
+  const lons = SCHOOLS.schools.map(s => s.lon), lats = SCHOOLS.schools.map(s => s.lat);
+  if (lons.length) {
+    map.fitBounds([[Math.min(...lons), Math.min(...lats)],
+      [Math.max(...lons), Math.max(...lats)]], {
+      padding: { top: 110, bottom: 220, left: 70, right: 70 },
+      maxZoom: 13, duration: 700,
+    });
+  }
+}
+schoolAllBox.addEventListener('change', () => toggleAllSchools(schoolAllBox.checked));
+
+function renderSchools() {
+  if (!schoolGroups) return;
+  const byLabel = new Map();
+  for (const s of SCHOOLS.schools) {
+    if (!byLabel.has(s.label)) byLabel.set(s.label, []);
+    byLabel.get(s.label).push(s);
+  }
+  const labels = SCHOOL_ORDER.filter(l => byLabel.has(l));
+  // Any level the payload gained that ORDER does not know about still gets
+  // listed, rather than silently vanishing from the sidebar.
+  for (const l of byLabel.keys()) if (!labels.includes(l)) labels.push(l);
+
+  schoolGroups.innerHTML = labels.map(l => {
+    const list = byLabel.get(l).sort((a, b) => a.name.localeCompare(b.name, 'id'));
+    return `<div class="tg" data-open="1">
+      <button class="tg-head" type="button" aria-expanded="true">
+        <svg class="tg-chev" width="11" height="11" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="3" stroke-linecap="round"
+             stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+        <span class="tg-t">${esc(l)}</span><span class="tg-n">${list.length}</span>
+      </button>
+      <div class="tg-body">${list.map(s => `
+        <button class="road-row${s.key === selectedSchool ? ' is-sel' : ''}" type="button"
+                data-skey="${s.key}">
+          <span class="rr-badge">${esc(s.label.replace(/ (Negeri|Swasta)$/, ''))}</span>
+          <span class="rr-name">${esc(s.name)}</span>
+        </button>`).join('')}
+      </div></div>`;
+  }).join('');
+
+  // Counts and provenance. The note says plainly how the list was built and
+  // what it leaves out, because a name-matched list is not an official register
+  // and someone using it to pick a school needs to know that.
+  const n = SCHOOLS.schools.length;
+  schoolNote.innerHTML = `<b>${n}</b> sekolah menengah atas &amp; kejuruan di Kota Depok. `
+    + `Tingkat dibaca dari nama di OpenStreetMap, bukan dari daftar resmi, `
+    + `jadi sekolah yang namanya tidak menyebut tingkatnya tidak ikut di sini.`;
+}
+
+if (schoolGroups) {
+  schoolGroups.addEventListener('click', e => {
+    const head = e.target.closest('.tg-head');
+    if (head) {
+      const g = head.closest('.tg');
+      g.dataset.open = g.dataset.open === '1' ? '0' : '1';
+      return;
+    }
+    const row = e.target.closest('[data-skey]');
+    if (!row) return;
+    const key = row.dataset.skey;
+    if (key === selectedSchool) {
+      highlightSchool(null);          // tapping the selection clears it
+    } else {
+      highlightSchool(key);
+    }
+    if (window.matchMedia('(max-width: 900px)').matches) closeSidebar();
+  });
+}
+
+/* ---------- secondary schools ---------- */
 transAllBox.addEventListener('change', () => toggleAllAngkot(transAllBox.checked));
 
 /* Transport list interaction. Separate handlers from the road ones because the
@@ -1923,6 +2220,7 @@ renderBack();
 renderAreaList();
 renderRoads();
 renderTransport();
+renderSchools();
 sideEl.hidden = true;
 /* Measure the attribution before the first overlay placement, so the card does
    not paint on top of the licence line and then jump. */

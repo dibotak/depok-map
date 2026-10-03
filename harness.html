@@ -33,6 +33,7 @@
       <div class="side-tabs" role="tablist">
         <button class="side-tab is-on" id="tab-area" type="button">Wilayah</button>
         <button class="side-tab" id="tab-road" type="button">Jalan</button>
+      <button class="side-tab" id="tab-school" role="tab" aria-selected="false"
         <button class="side-tab" id="tab-transport" type="button">Transportasi</button>
       </div>
       <button id="theme" class="side-theme" type="button">t</button>
@@ -67,6 +68,22 @@
         <div id="transport-groups"></div>
       </div>
     </div>
+<!-- secondary schools ------------------------------------------------- -->
+  <div class="side-panel" id="panel-school" role="tabpanel"
+       aria-labelledby="tab-school" hidden>
+    <!-- All points at once, so the gaps in coverage are visible rather than
+         hidden one-behind-another. -->
+    <div class="side-locate">
+      <label class="trans-all">
+        <input type="checkbox" id="school-all">
+        <span>Tampilkan semua sekolah</span>
+      </label>
+    </div>
+    <div class="side-scroll" id="school-scroll">
+      <p class="side-note" id="school-note"></p>
+      <div id="school-groups"></div>
+    </div>
+  </div>
   </aside>
   <div class="road-note-card" id="transport-card" hidden>
     <div class="rnc-text">
@@ -84,6 +101,28 @@
   </div>
   <button id="back" class="back" hidden><span></span></button>
   <div class="card" id="card"></div>
+<!-- selected school detail --------------------------------------------- -->
+<!-- Third user of the .card slot, alongside the area card and the route card.
+     Any one of the three can be up; the others stand down, so this sits in the
+     same position and inherits the same minimise behaviour. -->
+<div class="card trans-detail" id="school-detail" hidden>
+  <div class="card-top">
+    <div class="eyebrow" id="sd-eyebrow"></div>
+    <div class="card-name" id="sd-name"></div>
+    <button class="card-min" id="sd-min" type="button"
+            aria-label="Perkecil info" title="Perkecil info">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M6 9l6 6 6-6"/>
+      </svg>
+    </button>
+  </div>
+  <div class="ladder" id="sd-ladder"></div>
+  <div class="kids" id="sd-facts"></div>
+  <div class="card-foot">
+    <span class="code" id="sd-source"></span>
+  </div>
+</div>
 <!-- selected route detail --------------------------------------------- -->
 <!-- Same shape as the area card above (eyebrow / name / ladder of rungs /
      foot), because a route has the same kind of hierarchy to show: which city,
@@ -208,6 +247,13 @@ maplibregl.Map = function (opts) {
     window.__calls.push(['setStyle']);
   };
   this.setPaintProperty = function (id, p, v) { window.__calls.push(['setPaintProperty', id, p, v]); };
+  // The school layer zooms with flyTo rather than fitBounds: a school is a point
+  // with no extent to fit, so there is no bounds to compute. Without this the
+  // stub silently broke selection, and the card looked like it had a bug.
+  this.flyTo = function (o) {
+    self._zoom = o.zoom;
+    window.__calls.push(['flyTo', JSON.stringify(o)]);
+  };
   this.setLayoutProperty = function (id, p, v) { window.__calls.push(['setLayoutProperty', id, p, v]); };
   this.setLayerZoomRange = Rec('setLayerZoomRange');
   this.loadImage = Rec('loadImage');
@@ -254,6 +300,7 @@ maplibregl.LngLatBounds = function (a, b) { this.extend = function () { return t
 <script src="/src/data.js"></script>
 <script src="/src/roads.js"></script>
 <script src="/src/transport.js"></script>
+<script src="/src/schools.js"></script>
 <script src="/src/app.js"></script>
 <script>
 // The stub never receives a real `load`, so replay it once the module has run.

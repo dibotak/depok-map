@@ -834,3 +834,10 @@ html[data-theme="dark"] .trans-warn { color: #fbbf24; }
 }
 html[data-theme="dark"] .trans-all input { accent-color: #a78bfa; }
 .trans-all:hover { color: var(--ink); }
+
+/* ---------- secondary schools ---------- */
+/* Teal, a fourth colour family alongside the green admin areas, orange roads
+   and violet routes, so a school pin is never mistaken for a selection of
+   something else. */
+#school-detail { --road-c: #0f766e; }
+html[data-theme="dark"] #school-detail { --road-c: #2dd4bf; }
