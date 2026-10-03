@@ -156,66 +156,88 @@ shots/                screenshots (gitignored)
 
 ## Secondary schools
 
-`scripts/build-schools-kemdik.py` -> `src/schools.js`. **250 schools**, from
-Kemendikdasmen's own register rather than OpenStreetMap.
+`scripts/fetch-sekolahkita.py` + `scripts/build-schools-sekolahkita.py` ->
+`src/schools.js`. **242 schools, 224 of them with official coordinates.**
 
-A rerun is **instant** (~0.2s) once `.cache/kemdik/` is warm: the register pages,
-the Overpass fetch and every Nominatim answer are cached, and the rate-limit delay
-is only paid on a real request. The output is byte-reproducible — a fresh run
-against a warm cache must leave `git status` clean, which is the check worth
-running after touching the script.
+### The API
 
-### Why the source changed
+`sekolah.data.kemendikdasmen.go.id` is the ministry's newer portal ("Sekolah
+Kita"), an Angular SSG app with a public JSON API on the same origin and no
+authentication:
 
-The OSM-only build found 30 schools. The official register
-(`referensi.data.kemendikdasmen.go.id/pendidikan/dikmen/026600/2`) lists **250**
--- SMA 97, SMK 120, MA 33, of which only 21 are public. That is 87% of the city
-missing, so the OSM name match was never a coverage claim. The register is one
-server-rendered DataTable per kecamatan with NPSN, name, address, kelurahan and
-status; NPSN is the join key and is unique across all 250 rows.
+```
+POST /v1/sekolah-service/sekolah/cari-sekolah
+     {page, size, keyword, kabupaten_kota, bentuk_pendidikan, status_sekolah}
+GET  /v1/sekolah-service/sekolah/full-detail/{sekolah_id}
+```
 
-The level still comes from the name, because the register's own column heading
-is "SMA (Sederajat)" / "SMK (Sederajat)" and never labels a row individually.
-An official row is always named for its level ("SMKS Kesehatan Logos"), unlike
-the OSM list where "Sekolah" with no level had to be dropped.
+Two things that each cost a wrong turn first:
 
-### Geocoding: 21 of 250, and that is the real ceiling
+- `kabupaten_kota` wants the **name** ("Kota Depok"), not `kode_kabupaten`
+  ("026600"). The wilayah reference endpoint returns both, and passing the code
+  returns `total: 0` rather than an error -- a silent zero, not a rejection.
+- `page` is **0-based**. Page 1 silently skips the first 100 rows.
 
-Three passes, and the result is that 229 schools have no point:
+### Why this replaced the scrape
 
-1. **NPSN** -- OSM features carrying the number as a `ref`. 1 hit.
-2. **Name, within the school's own kecamatan** -- matched locally against one
-   cached Overpass fetch, with the candidate confirmed inside the claimed
-   kelurahan by point-in-polygon. 14 hits.
-3. **Nominatim** -- up to 3 name variants per school (`SMAN 1 KOTA DEPOK` ->
-   `SMA Negeri 1 Kota Depok`, which is how OSM spells it). 6 hits.
+The earlier pipeline scraped the DataTable pages on
+`referensi.data.kemendikdasmen.go.id` for names and addresses, then had to guess
+coordinates from OpenStreetMap. It could place only **21 of 250** schools,
+because OSM has never mapped most of the city's private secondary schools --
+there are 299 school features inside Depok in total, and only 36 whose names
+read as secondary.
 
-The reason 229 are unresolved is not a matching failure. OSM has 299 school
-features inside Kota Depok in total and only **36 distinct ones whose names read
-as secondary**. Most of the register's private schools have never been mapped.
-Nominatim indexes the same data, so it cannot find what is not there -- this is
-why pass 3 is capped and cached rather than run exhaustively.
+This portal publishes `lintang`/`bujur` per school. No geocoding, no string
+matching, no false positives, and a real point for schools with no OSM presence
+at all. Coordinate count went **21 -> 224**.
 
-Those 229 are kept in the payload with `lon: null`, listed in the sidebar with a
-`no pin` badge, and their card says "belum ada di OpenStreetMap" with the full
-official address. Dropping them to make the map look complete would be the exact
-failure this rewrite exists to fix. `hasPoint()` in `src/app.js` gates every
-GeoJSON path, since `null` coordinates would otherwise make invalid features and
-break `fitBounds`.
+It is also more complete: 242 secondary schools versus the scrape's 250 rows
+across a slightly different jenjang mix, and `bentuk_pendidikan` is given
+directly, so level no longer has to be guessed from the name or dropped for
+being ambiguous.
+
+| | SMA Negeri | SMA Swasta | SMK Negeri | SMK Swasta | MA Swasta |
+|---|---|---|---|---|---|
+| count | 15 | 68 | 5 | 120 | 34 |
+
+### Coordinates are official, but not perfect
+
+Three checks decide whether a point is trusted:
+
+1. **Zero is not a location.** 18 schools come back as `0/0`, the portal's way
+   of saying it has no point. Kept in the list with their address, no pin.
+2. **Latitude sign.** `SMAS IT AL-QUDWAH` (Beji) is published at latitude
+   **+6.3856** -- valid for Indonesia, 1,400km from Depok. Negating it lands
+   106m inside the city in Kemirimuka, so it is a dropped minus sign in the
+   source and is corrected. The test is the *city polygon*, not a latitude
+   range: a range check cannot catch this, because +6.38 is a real latitude
+   somewhere in Indonesia. What gives it away is that the point misses the city
+   and its negation does not.
+3. **Proximity.** A point more than 2km outside the city is refused. Two
+   schools sit 30m and 423m outside because our village polygons are coarse at
+   the edge, and both are kept.
+
+Near-null-island values (`|lat| < 0.01 and |lon| < 0.01`) count as missing.
+`MAS ULUMUL QUR'AN` is published at `0.0009, -0.0013` -- about 11,900km away --
+and "koordinat 11901 km di luar Kota Depok" on a card would be true and useless.
 
 ### Rate limiting
 
-Nominatim allows 1 request/second and returns 429 beyond that. An earlier
-version fired ~1400 queries with no backoff and spent minutes retrying into a
-wall while appearing to work. The script now caps at 3 queries per school, holds
-a 1.1s floor, backs off exponentially on 429/503, and caches every response to
-`.cache/kemdik/nominatim.json` so a rerun is free.
+Nothing was throttled: 29 list requests and 242 detail requests in 134s, no
+429s. The policy is deliberately conservative anyway -- 0.45s between detail
+requests, 0.6s between pages, exponential backoff on 429/503 with the error
+surfaced rather than swallowed, and a descriptive User-Agent.
+
+Every response is cached to `.cache/sekolah/` by `sekolah_id`, so a rebuild
+makes no network requests. That is what makes the output checkable: a warm
+rebuild is ~1s and byte-identical, verified by rerunning and diffing.
 
 ### UI
 
-The list grew from 30 to 250 rows, so it gained a search box matching name,
-NPSN, kelurahan and kecamatan. Five groups: SMA Negeri 17, SMA Swasta 80,
-SMK Negeri 4, SMK Swasta 116, Madrasah Aliyah Swasta 33.
+`hasPoint()` gates every GeoJSON path, since 18 records have `lon: null` and
+would otherwise produce invalid features and break `fitBounds`. Those rows get a
+`no pin` badge and a card reading "belum ada koordinat di sumber". Cards carry
+6+ facts: address, kelurahan, postcode, coordinates, source id, NPSN.
 
 ## Regenerating the boundary data
 

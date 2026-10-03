@@ -2073,9 +2073,9 @@ function renderSchoolCard(s) {
   sdName.textContent = s.name;
 
   // Ladder: village -> district -> city, the same hierarchy the area card shows.
-  // The official register states the kelurahan itself, so prefer it over the
-  // point-in-polygon result -- it is authoritative and still present for schools
-  // that have no coordinate at all.
+  // With official coordinates the village comes from point-in-polygon; the
+  // district is the portal's own kecamatan. Both fall back to what the payload
+  // already says, so a school with no point still shows its district.
   const place = placeForSchool(s.lon, s.lat);
   const village = s.village || (place && place.village);
   const district = s.district || (place && place.district);
@@ -2106,13 +2106,16 @@ function renderSchoolCard(s) {
   if (village) facts.push(['Kelurahan', esc(village)]);
   if (s.website) facts.push(['Web', esc(s.website)]);
   if (s.phone) facts.push(['Telp', esc(s.phone)]);
+  if (s.kelurahan && s.kelurahan !== village) facts.push(['Kelurahan', esc(s.kelurahan)]);
+  if (s.postcode) facts.push(['Kode pos', `<span class="code">${esc(s.postcode)}</span>`]);
   if (hasPoint(s)) {
     facts.push(['Koordinat', `${s.lat.toFixed(5)}, ${s.lon.toFixed(5)}`]);
-    facts.push(['Titik', `OpenStreetMap <span class="code">${s.osm_type || 'node'}/${s.osm_id || '—'}</span>`]);
+    facts.push(['Titik', `Kemendikdasmen <span class="code">${esc(s.school_id || s.key || '').slice(0, 8)}</span>`]);
   } else {
-    // Say why there is no pin. A missing marker with no explanation reads as a
-    // bug; this is a gap in OSM, and the school is still real.
-    facts.push(['Titik', '<span class="muted">belum ada di OpenStreetMap</span>']);
+    // Say why there is no pin. A marker missing with no explanation reads as a
+    // bug; this is a gap in the ministry's data and the school is still real,
+    // so the address carries the card on its own.
+    facts.push(['Titik', `<span class="muted">${esc(s.note || 'belum ada koordinat')}</span>`]);
   }
   facts.push(['NPSN', `<span class="code">${esc(s.npsn || '—')}</span>`]);
   sdFacts.className = 'kids trans-facts';
@@ -2236,15 +2239,15 @@ function renderSchools(query) {
   // Counts and provenance. The note says plainly how the list was built and
   // what it leaves out, because a name-matched list is not an official register
   // and someone using it to pick a school needs to know that.
-  // 250 rows now, so the note carries the numbers that matter: how many come
-  // from the official register, and how many could be placed on the map.
+  // 242 rows now, so the note carries the numbers that matter: how many are on
+  // the official register, and how many carry a coordinate.
   const n = SCHOOLS.schools.length;
   const placed = SCHOOLS.schools.filter(hasPoint).length;
   const noPt = n - placed;
-  schoolNote.innerHTML = `<b>${n}</b> sekolah dari daftar resmi Kemendikdasmen `
-    + `(referensi.data.kemendikdasmen.go.id), dengan NPSN, alamat, dan kelurahan. `
-    + `<b>${placed}</b> punya titik di peta dari OpenStreetMap; `
-    + (noPt ? `<b>${noPt}</b> belum ada titiknya di OpenStreetMap dan tetap `
+  schoolNote.innerHTML = `<b>${n}</b> sekolah dari data resmi Kemendikdasmen `
+    + `(Sekolah Kita), lengkap dengan NPSN, jenjang, status, dan alamat. `
+    + `<b>${placed}</b> punya koordinat resmi dan tampil sebagai titik di peta; `
+    + (noPt ? `<b>${noPt}</b> belum punya koordinat di sumber, jadi tetap `
       + `terdaftar di sini tanpa pin — buka kartunya untuk alamat lengkap. `
       : `semuanya punya titik di peta. `)
     + `Cari nama sekolah, NPSN, atau kelurahan.`;
