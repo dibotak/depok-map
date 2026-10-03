@@ -604,8 +604,7 @@ function goCity(opts = {}) {
 }
 
 function openDistrict(code, opts = {}) {
-  renderSchoolCard(null);  // area selection supersedes a school
-  renderRouteCard(null);   // area selection supersedes a route
+  clearSubCards();  // area selection supersedes any school or route detail
   const kec = KEC_BY_CODE.get(code);
   if (!kec) return;
   state.view = 'kecamatan';
@@ -623,8 +622,7 @@ function openDistrict(code, opts = {}) {
 
 /** Selects a kelurahan by village_code. Names are ambiguous (see KEL_BY_CODE). */
 function selectVillage(code, opts = {}) {
-  renderSchoolCard(null);  // area selection supersedes a school
-  renderRouteCard(null);   // area selection supersedes a route
+  clearSubCards();  // area selection supersedes any school or route detail
   const f = KEL_BY_CODE.get(code);
   if (!f) return;
   state.village = code;
@@ -645,9 +643,27 @@ function selectVillage(code, opts = {}) {
   history.replaceState(null, '', '#' + encodeURIComponent(f.properties.village_code));
 }
 
+// Handing the screen back to the area card.
+//
+// renderRouteCard(null) and renderSchoolCard(null) hide only their own .card;
+// neither touches #card, because their own selectors need #card to stay hidden
+// while they hold it. That leaves the area entry points responsible for putting
+// #card back -- selectDistrict() and selectVillage() did not, so picking a
+// school and then a kecamatan left the slot empty with nothing showing.
+function clearSubCards() {
+  renderRouteCard(null);
+  renderSchoolCard(null);
+  selectedRoute = null;
+  selectedSchool = null;
+  // Drop the markers too, or a stale pin stays on the map with no card for it.
+  const rt = map.getSource(SRC_TRANS), sr = map.getSource(SRC_SCHOOL);
+  if (rt) rt.setData({ type: 'FeatureCollection', features: [] });
+  if (sr) sr.setData({ type: 'FeatureCollection', features: [] });
+  card.hidden = false;
+}
+
 function selectDistrict(name, opts = {}) {
-  renderSchoolCard(null);  // area selection supersedes a school
-  renderRouteCard(null);   // area selection supersedes a route
+  clearSubCards();  // area selection supersedes any school or route detail
   const f = KEC_BY_NAME.get(name);
   if (f) openDistrict(f.properties.district_code, opts);
 }
@@ -1999,10 +2015,22 @@ const SCHOOLS = window.DEPOK_SCHOOLS || { schools: [], counts: {} };
 const schoolAllBox = document.getElementById('school-all');
 const schoolNote = document.getElementById('school-note');
 const schoolGroups = document.getElementById('school-groups');
+const schoolSearch = document.getElementById('school-search');
+const schoolEmpty = document.getElementById('school-empty');
 let selectedSchool = null;
 let showAllSchools = false;
 
-const SCHOOL_ORDER = ['SMA Negeri', 'SMA Swasta', 'SMK Negeri', 'SMK Swasta', 'Madrasah Aliyah'];
+const SCHOOL_ORDER = ['SMA Negeri', 'SMA Swasta', 'SMK Negeri', 'SMK Swasta',
+  'Madrasah Aliyah Negeri', 'Madrasah Aliyah Swasta'];
+
+// Only schools with a real point can become a feature. The official register
+// lists 244 schools and OSM has a point for well under half of them, so most
+// records here legitimately have lon/lat null -- those stay in the list and the
+// detail card, marked "belum ada titik", and are skipped on the map. Emitting
+// them as [null, null] would make GeoJSON invalid and break fitBounds.
+function hasPoint(s) {
+  return s.lon != null && s.lat != null && Number.isFinite(s.lon) && Number.isFinite(s.lat);
+}
 
 function schoolFeature(s) {
   return {
@@ -2020,6 +2048,7 @@ function schoolFeature(s) {
  *  Schools are points, so unlike a route corridor they really do belong to one
  *  village -- this is exact, not an approximation. */
 function placeForSchool(lon, lat) {
+  if (lon == null || lat == null) return null;
   for (const f of KEL) {
     const g = f.geometry;
     const polys = g.type === 'Polygon' ? [g.coordinates]
@@ -2044,10 +2073,15 @@ function renderSchoolCard(s) {
   sdName.textContent = s.name;
 
   // Ladder: village -> district -> city, the same hierarchy the area card shows.
+  // The official register states the kelurahan itself, so prefer it over the
+  // point-in-polygon result -- it is authoritative and still present for schools
+  // that have no coordinate at all.
   const place = placeForSchool(s.lon, s.lat);
+  const village = s.village || (place && place.village);
+  const district = s.district || (place && place.district);
   sdLadder.innerHTML = '';
-  if (place) {
-    for (const [lvl, val] of [['Kelurahan', place.village], ['Kecamatan', place.district]]) {
+  if (village || district) {
+    for (const [lvl, val] of [['Kelurahan', village], ['Kecamatan', district]]) {
       if (!val) continue;
       const row = document.createElement('div');
       row.className = 'rung';
@@ -2057,37 +2091,30 @@ function renderSchoolCard(s) {
       sdLadder.append(row);
     }
   }
-  // No village matched: every kept school is inside the city clip, so this only
-  // happens on a boundary sliver. Say so rather than showing an empty ladder.
   if (!sdLadder.children.length) {
     sdLadder.innerHTML = '<div class="rung"><i class="dot"></i>'
-      + '<span class="lvl">Wilayah</span><span class="nm leg">Batas Kota Depok</span></div>';
+      + '<span class="lvl">Wilayah</span><span class="nm leg">Kota Depok</span></div>';
   }
 
   // At least three facts, so the card never reads as a title with nothing in
   // it. Every field is optional, so fall back through progressively more
   // specific and then to the least specific, rather than dropping the row.
+  // The register gives an address and an NPSN for every school, so the card
+  // always has real content. Three facts minimum even when nothing else is known.
   const facts = [];
-  if (s.address) {
-    facts.push(['Alamat', esc(s.address)]);
-  } else if (s.street) {
-    // Most of these 30 have no street tag at all, so the village the school
-    // sits in is the honest address fallback -- and it is already computed for
-    // the ladder, so it costs nothing.
-    const where = placeForSchool(s.lon, s.lat);
-    facts.push(['Alamat', esc(s.street + (where ? `, ${where.village}` : ''))]);
-  } else {
-    const where = placeForSchool(s.lon, s.lat);
-    if (where) facts.push(['Alamat', esc(`${where.village}, ${where.district}`)]);
-  }
-  if (s.grades) facts.push(['Kelas', esc(s.grades).replace('-', '–')]);
+  if (s.address) facts.push(['Alamat', esc(s.address)]);
+  if (village) facts.push(['Kelurahan', esc(village)]);
   if (s.website) facts.push(['Web', esc(s.website)]);
   if (s.phone) facts.push(['Telp', esc(s.phone)]);
-  if (s.operator) facts.push(['Pengelola', esc(s.operator)]);
-  facts.push(['Koordinat', `${s.lat.toFixed(5)}, ${s.lon.toFixed(5)}`]);
-  // Provenance last: this is what the card is resting on, and it is also the
-  // least useful thing for someone choosing a school.
-  facts.push(['Data', `OpenStreetMap <span class="code">${s.osm_type}/${s.osm_id}</span>`]);
+  if (hasPoint(s)) {
+    facts.push(['Koordinat', `${s.lat.toFixed(5)}, ${s.lon.toFixed(5)}`]);
+    facts.push(['Titik', `OpenStreetMap <span class="code">${s.osm_type || 'node'}/${s.osm_id || '—'}</span>`]);
+  } else {
+    // Say why there is no pin. A missing marker with no explanation reads as a
+    // bug; this is a gap in OSM, and the school is still real.
+    facts.push(['Titik', '<span class="muted">belum ada di OpenStreetMap</span>']);
+  }
+  facts.push(['NPSN', `<span class="code">${esc(s.npsn || '—')}</span>`]);
   sdFacts.className = 'kids trans-facts';
   sdFacts.innerHTML = facts
     .map(([k, v]) => `<div class="trans-fact"><dt>${k}</dt><dd>${v}</dd></div>`).join('');
@@ -2120,8 +2147,15 @@ function highlightSchool(key) {
     relayoutOverlays();
     return;
   }
-  src.setData({ type: 'FeatureCollection', features: [schoolFeature(s)] });
-  map.flyTo({ center: [s.lon, s.lat], zoom: Math.max(map.getZoom(), 15), duration: 700 });
+  // 229 of the 250 official schools have no point in OSM. Those get no pin and
+  // no fly-to, but the card still opens so the school stays readable and the
+  // missing marker is explained instead of looking like a bug.
+  if (hasPoint(s)) {
+    src.setData({ type: 'FeatureCollection', features: [schoolFeature(s)] });
+    map.flyTo({ center: [s.lon, s.lat], zoom: Math.max(map.getZoom(), 15), duration: 700 });
+  } else {
+    src.setData({ type: 'FeatureCollection', features: [] });
+  }
   // Same stand-aside as a route: two .cards in one slot overlap.
   card.hidden = true;
   renderRouteCard(null);
@@ -2140,9 +2174,9 @@ function toggleAllSchools(on) {
     src.setData({ type: 'FeatureCollection', features: [] });
     return;
   }
-  const features = SCHOOLS.schools.map(schoolFeature);
-  src.setData({ type: 'FeatureCollection', features });
-  const lons = SCHOOLS.schools.map(s => s.lon), lats = SCHOOLS.schools.map(s => s.lat);
+  const placed = SCHOOLS.schools.filter(hasPoint);
+  src.setData({ type: 'FeatureCollection', features: placed.map(schoolFeature) });
+  const lons = placed.map(s => s.lon), lats = placed.map(s => s.lat);
   if (lons.length) {
     map.fitBounds([[Math.min(...lons), Math.min(...lats)],
       [Math.max(...lons), Math.max(...lats)]], {
@@ -2153,10 +2187,21 @@ function toggleAllSchools(on) {
 }
 schoolAllBox.addEventListener('change', () => toggleAllSchools(schoolAllBox.checked));
 
-function renderSchools() {
+function renderSchools(query) {
   if (!schoolGroups) return;
+  // 250 rows is too many to scan, so the search box filters as you type. It
+  // matches name, NPSN, village and district -- a user looking for a school in
+  // Cilodong is as likely to type the kecamatan as the school.
+  const q = (query == null ? (schoolSearch ? schoolSearch.value : '') : query)
+    .trim().toLowerCase();
   const byLabel = new Map();
+  let shown = 0;
   for (const s of SCHOOLS.schools) {
+    if (q && !(s.name.toLowerCase().includes(q)
+      || (s.npsn || '').includes(q)
+      || (s.village || '').toLowerCase().includes(q)
+      || (s.district || '').toLowerCase().includes(q))) continue;
+    shown++;
     if (!byLabel.has(s.label)) byLabel.set(s.label, []);
     byLabel.get(s.label).push(s);
   }
@@ -2176,20 +2221,33 @@ function renderSchools() {
       </button>
       <div class="tg-body">${list.map(s => `
         <button class="road-row${s.key === selectedSchool ? ' is-sel' : ''}" type="button"
-                data-skey="${s.key}">
+                data-skey="${esc(s.key)}">
           <span class="rr-badge">${esc(s.label.replace(/ (Negeri|Swasta)$/, ''))}</span>
           <span class="rr-name">${esc(s.name)}</span>
+          ${hasPoint(s) ? '' : '<span class="rr-nopt" title="belum ada titik di OpenStreetMap">no pin</span>'}
         </button>`).join('')}
       </div></div>`;
   }).join('');
 
+  // With 250 rows a wrong query can legitimately match nothing; say so rather
+  // than leaving an empty panel that looks like a failed load.
+  if (schoolEmpty) schoolEmpty.hidden = shown > 0;
+
   // Counts and provenance. The note says plainly how the list was built and
   // what it leaves out, because a name-matched list is not an official register
   // and someone using it to pick a school needs to know that.
+  // 250 rows now, so the note carries the numbers that matter: how many come
+  // from the official register, and how many could be placed on the map.
   const n = SCHOOLS.schools.length;
-  schoolNote.innerHTML = `<b>${n}</b> sekolah menengah atas &amp; kejuruan di Kota Depok. `
-    + `Tingkat dibaca dari nama di OpenStreetMap, bukan dari daftar resmi, `
-    + `jadi sekolah yang namanya tidak menyebut tingkatnya tidak ikut di sini.`;
+  const placed = SCHOOLS.schools.filter(hasPoint).length;
+  const noPt = n - placed;
+  schoolNote.innerHTML = `<b>${n}</b> sekolah dari daftar resmi Kemendikdasmen `
+    + `(referensi.data.kemendikdasmen.go.id), dengan NPSN, alamat, dan kelurahan. `
+    + `<b>${placed}</b> punya titik di peta dari OpenStreetMap; `
+    + (noPt ? `<b>${noPt}</b> belum ada titiknya di OpenStreetMap dan tetap `
+      + `terdaftar di sini tanpa pin — buka kartunya untuk alamat lengkap. `
+      : `semuanya punya titik di peta. `)
+    + `Cari nama sekolah, NPSN, atau kelurahan.`;
 }
 
 if (schoolGroups) {
@@ -2237,6 +2295,17 @@ transportGroups.addEventListener('click', e => {
     if (window.matchMedia('(max-width: 760px)').matches) setSidebar(false);
   }
 });
+
+if (schoolSearch) {
+  // Re-render on input, but keep it cheap: the list is 250 strings.
+  schoolSearch.addEventListener('input', () => renderSchools(schoolSearch.value));
+  schoolSearch.addEventListener('keydown', e => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const first = schoolGroups.querySelector('[data-skey]');
+    if (first) first.click();
+  });
+}
 document.getElementById('transport-card-x')
   .addEventListener('click', () => highlightRoute(null));
 

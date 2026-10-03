@@ -156,37 +156,60 @@ shots/                screenshots (gitignored)
 
 ## Secondary schools
 
-`scripts/build-schools.py` → `src/schools.js` (30 schools). Two queries are
-unioned server-side: `amenity=school|college|university` over the Kota Depok
-bbox, **and** a `name~"SMAN|SMKN|SMAS|SMKS|SMA|SMK"` search. The second exists
-because `amenity` alone is not complete — a mapper who abbreviated the name and
-tagged the feature `amenity=college`, or left `amenity` off, is invisible to the
-first. It currently returns 17 extra features, all of which fall outside the city
-clip (`addr:city=Bogor` — Sawangan, Leuwiliang), so the count is unchanged.
+`scripts/build-schools-kemdik.py` -> `src/schools.js`. **250 schools**, from
+Kemendikdasmen's own register rather than OpenStreetMap.
 
-Level comes from the **name**, because `isced:level` is filled in on only 10 of
-the ~900 features returned. Two corrections matter:
+### Why the source changed
 
-- `SMAS`/`SMKS` are how private schools are commonly abbreviated. Without those
-  two patterns 17 genuine schools are silently dropped.
-- `school:type_idn` **outranks the name** where present. "SMP Al
-  Muhtadin/SMA Muhamadiyah" is tagged `smp` — a combined campus whose name lists
-  several levels and matched whichever pattern came first. A bare non-secondary
-  tag (`smp`, `sd`) now drops the feature; a multi-level tag (`sd, smp, sma`) is
-  a real combined campus and stays.
+The OSM-only build found 30 schools. The official register
+(`referensi.data.kemendikdasmen.go.id/pendidikan/dikmen/026600/2`) lists **250**
+-- SMA 97, SMK 120, MA 33, of which only 21 are public. That is 87% of the city
+missing, so the OSM name match was never a coverage claim. The register is one
+server-rendered DataTable per kecamatan with NPSN, name, address, kelurahan and
+status; NPSN is the join key and is unique across all 250 rows.
 
-Campuses are deduplicated on a canonical name plus a 400m radius: "SMA Negeri 1
-Kota Depok" arrives as 7 building polygons within 70m, and the same school is
-also tagged "SMA Negeri 1 Depok". 8 rows collapse, 39 → 30 after the `smp` fix.
+The level still comes from the name, because the register's own column heading
+is "SMA (Sederajat)" / "SMK (Sederajat)" and never labels a row individually.
+An official row is always named for its level ("SMKS Kesehatan Logos"), unlike
+the OSM list where "Sekolah" with no level had to be dropped.
 
-The detail card always shows **at least three facts** — Alamat, Koordinat, Data
-(OSM id) — falling back through `addr:full` → `addr:street` → the village/district
-already resolved for the ladder, because only 8 of the 30 carry a street tag.
-Where present it also shows Kelas, Web, Telp and Pengelola.
+### Geocoding: 21 of 250, and that is the real ceiling
 
-**Limit:** this is OSM name matching, not the official register, and OSM coverage
-of Depok's SMAs is uneven. A school mapped without its level in the name will
-not appear.
+Three passes, and the result is that 229 schools have no point:
+
+1. **NPSN** -- OSM features carrying the number as a `ref`. 1 hit.
+2. **Name, within the school's own kecamatan** -- matched locally against one
+   cached Overpass fetch, with the candidate confirmed inside the claimed
+   kelurahan by point-in-polygon. 14 hits.
+3. **Nominatim** -- up to 3 name variants per school (`SMAN 1 KOTA DEPOK` ->
+   `SMA Negeri 1 Kota Depok`, which is how OSM spells it). 6 hits.
+
+The reason 229 are unresolved is not a matching failure. OSM has 299 school
+features inside Kota Depok in total and only **36 distinct ones whose names read
+as secondary**. Most of the register's private schools have never been mapped.
+Nominatim indexes the same data, so it cannot find what is not there -- this is
+why pass 3 is capped and cached rather than run exhaustively.
+
+Those 229 are kept in the payload with `lon: null`, listed in the sidebar with a
+`no pin` badge, and their card says "belum ada di OpenStreetMap" with the full
+official address. Dropping them to make the map look complete would be the exact
+failure this rewrite exists to fix. `hasPoint()` in `src/app.js` gates every
+GeoJSON path, since `null` coordinates would otherwise make invalid features and
+break `fitBounds`.
+
+### Rate limiting
+
+Nominatim allows 1 request/second and returns 429 beyond that. An earlier
+version fired ~1400 queries with no backoff and spent minutes retrying into a
+wall while appearing to work. The script now caps at 3 queries per school, holds
+a 1.1s floor, backs off exponentially on 429/503, and caches every response to
+`.cache/kemdik/nominatim.json` so a rerun is free.
+
+### UI
+
+The list grew from 30 to 250 rows, so it gained a search box matching name,
+NPSN, kelurahan and kecamatan. Five groups: SMA Negeri 17, SMA Swasta 80,
+SMK Negeri 4, SMK Swasta 116, Madrasah Aliyah Swasta 33.
 
 ## Regenerating the boundary data
 

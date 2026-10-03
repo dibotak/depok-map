@@ -869,3 +869,45 @@ html[data-theme="dark"] .trans-all input { accent-color: #a78bfa; }
    something else. */
 #school-detail { --road-c: #0f766e; }
 html[data-theme="dark"] #school-detail { --road-c: #2dd4bf; }
+
+/* ---------- schools ---------- */
+/* A 250-row list needs a filter box. Sized like the top search bar and reusing
+   the same variables, so it reads as part of the sidebar rather than a widget
+   dropped in. */
+.side-search {
+  width: 100%;
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  -webkit-appearance: none;
+}
+.side-search:focus {
+  outline: 2px solid var(--accent, currentColor);
+  outline-offset: -1px;
+  border-color: var(--border-strong);
+}
+.side-search::placeholder { color: var(--ink-2); }
+
+/* Marks a school that is in the official register but has no OSM point. It is
+   not a warning about the data being wrong — it is an honest gap in the map,
+   and hiding it would make the sidebar look like it is missing schools. */
+.rr-nopt {
+  flex: none;
+  font-size: 10px;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+
+/* Used in the school card for facts we do not have, e.g. "belum ada di
+   OpenStreetMap". --ink-2 rather than --ink so it reads as secondary text
+   without looking like an error. */
+.muted { color: var(--ink-2); }
