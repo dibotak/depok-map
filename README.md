@@ -159,6 +159,12 @@ shots/                screenshots (gitignored)
 `scripts/build-schools-kemdik.py` -> `src/schools.js`. **250 schools**, from
 Kemendikdasmen's own register rather than OpenStreetMap.
 
+A rerun is **instant** (~0.2s) once `.cache/kemdik/` is warm: the register pages,
+the Overpass fetch and every Nominatim answer are cached, and the rate-limit delay
+is only paid on a real request. The output is byte-reproducible — a fresh run
+against a warm cache must leave `git status` clean, which is the check worth
+running after touching the script.
+
 ### Why the source changed
 
 The OSM-only build found 30 schools. The official register

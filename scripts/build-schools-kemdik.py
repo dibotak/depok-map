@@ -472,13 +472,19 @@ def main():
             queries += [f"{nv}, {street}, {r['village']}, Depok"
                         for nv in name_variants(r["name"])[:1]]
         for q in queries[:3]:
+            # The rate-limit delay belongs on a real request only. Sleeping on a
+            # cache hit made a rerun take 6m40s of pure waiting -- 235 schools x
+            # 1.1s -- even though every answer was already on disk.
             if q in ncache:
                 hits = ncache[q]
+                cached = True
             else:
                 hits = nominatim(q)
                 ncache[q] = hits
+                cached = False
             if not hits:
-                time.sleep(_NOM_WAIT[0])
+                if not cached:
+                    time.sleep(_NOM_WAIT[0])
                 continue
             for h in hits:
                 try:
@@ -497,7 +503,8 @@ def main():
                 break
             if r["lon"] is not None:
                 break
-            time.sleep(_NOM_WAIT[0])
+            if not cached:
+                time.sleep(_NOM_WAIT[0])
         if r["lon"] is None:
             stats["unresolved"] += 1
         done += 1
