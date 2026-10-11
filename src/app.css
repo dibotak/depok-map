@@ -423,6 +423,21 @@ body.card-collapsed .card { padding-bottom: 10px; }
   background: var(--bg);
   border-bottom: 1px solid var(--border);
   flex: none;
+  /* Capped so a long provenance note cannot eat the list below it: the note
+     scrolls in place (same thin scrollbar as .side-body) instead of pushing
+     route rows out of the panel. One-line notes -- area's, or any short
+     note -- sit far under the cap and are unaffected. The note keeps its
+     sticky top so it stays pinned while the list scrolls past. */
+  max-height: 132px;
+  overflow-y: auto; overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+.side-note::-webkit-scrollbar { width: 9px; }
+.side-note::-webkit-scrollbar-track { background: transparent; }
+.side-note::-webkit-scrollbar-thumb {
+  background: var(--border-strong); border-radius: 999px;
+  border: 3px solid transparent; background-clip: content-box;
 }
 .side-note b { color: var(--ink-2); font-weight: 600; }
 
@@ -688,6 +703,10 @@ body.side-open .card {
      to hit. The 30x30 icon buttons and 30px-tall rows measured well under it. */
   .side-theme, .side-close { width: 40px; height: 40px; }
   .acc-head { padding: 10px 13px; min-height: 44px; }
+  /* A phone shows only ~5 lines of note before the cap: the transport note is
+     10+ lines, so on mobile it scrolls after 96px and the freed space goes to
+     the route/school list instead of to prose. Desktop keeps the roomier 132px. */
+  .side-note { max-height: 96px; }
   .locate-btn { height: 40px; }
   .card-min { width: 40px; height: 40px; top: 6px; right: 6px; }
   .side-row { padding: 12px 13px; min-height: 44px; }
