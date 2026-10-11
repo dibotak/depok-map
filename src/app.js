@@ -2453,8 +2453,11 @@ function renderPuskesCard(p) {
   if (p.phone) facts.push(['Telp', `<span class="code">${esc(p.phone)}</span>`]);
   if (p.website) facts.push(['Web', esc(p.website)]);
   if (hasPuskesPin(p)) {
+    const src = p.pin_src === 'gmaps'
+      ? `Google Maps <span class="muted">(geokode nama resmi)</span>`
+      : `OpenStreetMap <span class="code">${esc(p.osm)}</span>`;
     facts.push(['Koordinat', `${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}`]);
-    facts.push(['Titik', `OpenStreetMap <span class="code">${esc(p.osm)}</span>`]);
+    facts.push(['Titik', src]);
   } else {
     facts.push(['Titik', `<span class="muted">belum ada pin di OpenStreetMap</span>`]);
   }
@@ -2572,19 +2575,21 @@ function renderPuskesmas(query) {
   // A wrong query can legitimately match nothing; say so.
   if (puskesEmpty) puskesEmpty.hidden = shown > 0;
 
-  // Provenance, with the numbers that matter: how many facilities the list has,
-  // how many carry a pin, how many serve 24 hours. The Dinkes register sits
-  // behind a WAF that rejects non-Indonesian IPs, so the official count
-  // (38-39 UPTD) is cited, not claimed as part of this dataset.
+  // Provenance, with the numbers that matter: the list itself is the official
+  // Dinkes portal register (37 puskesmas across 11 kecamatan); the pins come
+  // from OpenStreetMap where the community mapped the facility, otherwise from
+  // Google Maps geocoding of the official name -- the payload records pin_src
+  // so the split below is data, not a guess.
   const n = PUSKESMAS.list.length;
-  const placed = PUSKESMAS.list.filter(hasPuskesPin).length;
-  const noPt = n - placed;
+  const osmN = PUSKESMAS.list.filter(p => p.pin_src === 'osm').length;
+  const gmN = PUSKESMAS.list.filter(p => p.pin_src === 'gmaps').length;
+  const noPt = PUSKESMAS.list.filter(p => !p.pin_src).length;
   const d24 = PUSKESMAS.list.filter(p => p.open24).length;
-  puskesNote.innerHTML = `<b>${n}</b> fasilitas di <b>${new Set(PUSKESMAS.list.map(p => p.district)).size}</b> kecamatan `
-    + `(11 di Kota Depok). Pin dari OpenStreetMap: <b>${placed}</b>; `
-    + (noPt ? `<b>${noPt}</b> UPTD dari daftar Dinkes terdaftar tanpa pin. ` : '')
-    + `<b>${d24}</b> melayani 24 jam (jadwal Dinkes 2025). `
-    + `Dinkes mencatat 38–39 UPTD; cakupan pin lebih tipis dari daftar resmi. `
+  puskesNote.innerHTML = `<b>${n}</b> puskesmas di <b>${new Set(PUSKESMAS.list.map(p => p.district)).size}</b> kecamatan `
+    + `— daftar resmi portal Puskesmas Dinkes. Pin: <b>${osmN}</b> dari OpenStreetMap`
+    + (gmN ? `, <b>${gmN}</b> dari Google Maps` : '')
+    + (noPt ? `; <b>${noPt}</b> belum punya pin` : '')
+    + `. <b>${d24}</b> melayani 24 jam (jadwal Dinkes 2025). `
     + `Cari nama puskesmas atau kelurahan.`;
 }
 
