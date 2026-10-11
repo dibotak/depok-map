@@ -412,32 +412,24 @@ body.card-collapsed .card { padding-bottom: 10px; }
   border: 3px solid transparent; background-clip: content-box;
 }
 .side-scroll::-webkit-scrollbar-thumb:hover { background-clip: content-box; background-color: var(--faint); }
-/* The note is sticky so the source citation stays visible while scrolling the
-   77 ruas. This only works because it lives INSIDE the .side-scroll container
-   (see index.html) -- sticky positions against the nearest scrolling ancestor,
-   so as a sibling of the scroller it never stuck at all. */
+/* The note used to be position:sticky so the source citation stayed visible
+   while scrolling the 77 ruas. Deliberately unpinned now: it sits in flow at
+   the same level as the rows below it, so scrolling the list scrolls the note
+   out of the way and the rows keep the full panel height. */
 .side-note {
-  position: sticky; top: 0; z-index: 2;
+  /* A normal element in flow, at the same level as the rows below it: when the
+     user scrolls the list, the note scrolls away and gives the list the whole
+     panel. It deliberately does NOT stick -- an earlier version pinned it with
+     position:sticky top:0, which kept a multi-line provenance block parked
+     over the list forever, and on a phone that cost the route list several
+     visible rows. The one-line area note lives outside its scroller (the area
+     list re-renders its innerHTML wholesale, which would wipe an in-scroller
+     note), so nothing changes for Wilayah. */
   margin: 0; padding: 9px 13px;
   font-size: 11.5px; line-height: 1.45; color: var(--muted);
   background: var(--bg);
   border-bottom: 1px solid var(--border);
   flex: none;
-  /* Capped so a long provenance note cannot eat the list below it: the note
-     scrolls in place (same thin scrollbar as .side-body) instead of pushing
-     route rows out of the panel. One-line notes -- area's, or any short
-     note -- sit far under the cap and are unaffected. The note keeps its
-     sticky top so it stays pinned while the list scrolls past. */
-  max-height: 132px;
-  overflow-y: auto; overscroll-behavior: contain;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-strong) transparent;
-}
-.side-note::-webkit-scrollbar { width: 9px; }
-.side-note::-webkit-scrollbar-track { background: transparent; }
-.side-note::-webkit-scrollbar-thumb {
-  background: var(--border-strong); border-radius: 999px;
-  border: 3px solid transparent; background-clip: content-box;
 }
 .side-note b { color: var(--ink-2); font-weight: 600; }
 
@@ -703,10 +695,6 @@ body.side-open .card {
      to hit. The 30x30 icon buttons and 30px-tall rows measured well under it. */
   .side-theme, .side-close { width: 40px; height: 40px; }
   .acc-head { padding: 10px 13px; min-height: 44px; }
-  /* A phone shows only ~5 lines of note before the cap: the transport note is
-     10+ lines, so on mobile it scrolls after 96px and the freed space goes to
-     the route/school list instead of to prose. Desktop keeps the roomier 132px. */
-  .side-note { max-height: 96px; }
   .locate-btn { height: 40px; }
   .card-min { width: 40px; height: 40px; top: 6px; right: 6px; }
   .side-row { padding: 12px 13px; min-height: 44px; }
