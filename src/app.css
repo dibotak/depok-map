@@ -893,13 +893,15 @@ html[data-theme="dark"] .trans-warn { color: #fbbf24; }
 }
 .tog input:checked + i::after { transform: translateX(14px); background: #fff; }
 .tog input:focus-visible + i { box-shadow: 0 0 0 3px var(--accent-soft); }
-/* Per-section accents: violet for routes, teal for schools — the same colours
-   the map layers and detail cards already use, so the switch never reads as a
-   third, unrelated accent. */
+/* Per-section accents: violet for routes, teal for schools, rose for
+   puskesmas — the same colours the map layers and detail cards already use, so
+   the switch never reads as a third, unrelated accent. */
 #panel-transport { --tog-accent: #6d28d9; }
 #panel-school { --tog-accent: #0f766e; }
+#panel-puskes { --tog-accent: #b91c1c; }
 html[data-theme="dark"] #panel-transport { --tog-accent: #a78bfa; }
 html[data-theme="dark"] #panel-school { --tog-accent: #2dd4bf; }
+html[data-theme="dark"] #panel-puskes { --tog-accent: #fb7185; }
 
 /* ---------- secondary schools ---------- */
 /* Teal, a fourth colour family alongside the green admin areas, orange roads

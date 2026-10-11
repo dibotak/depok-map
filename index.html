@@ -168,6 +168,30 @@
       <p class="road-empty" id="school-empty" hidden>Tidak ada sekolah yang cocok.</p>
     </div>
   </div>
+    <button class="acc-head" id="tab-puskes" aria-expanded="false"
+            aria-controls="panel-puskes" type="button">
+      <svg class="acc-chev" width="12" height="12" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+      <span>Puskesmas</span>
+    </button>
+<!-- puskesmas ---------------------------------------------------------- -->
+  <div class="side-panel" id="panel-puskes"
+       aria-labelledby="tab-puskes" hidden>
+    <div class="side-locate">
+      <label class="trans-all">
+        <span class="tog"><input type="checkbox" id="puskes-all"><i aria-hidden="true"></i></span>
+        <span>Tampilkan semua puskesmas</span>
+      </label>
+    </div>
+    <div class="side-scroll" id="puskes-scroll">
+      <p class="side-note" id="puskes-note"></p>
+      <input class="side-search" id="puskes-search" type="search"
+             placeholder="Cari nama puskesmas, kelurahan..." autocomplete="off"
+             aria-label="Cari puskesmas">
+      <div id="puskes-groups"></div>
+      <p class="road-empty" id="puskes-empty" hidden>Tidak ada puskesmas yang cocok.</p>
+    </div>
+  </div>
 
   </div><!-- /.side-body -->
 </aside>
@@ -230,6 +254,30 @@
   </div>
 </div>
 
+<!-- selected puskesmas detail ------------------------------------------- -->
+<!-- Same card slot and the same stand-aside rule as the school card: whichever
+     detail is up, the others are hidden. Built as its own block rather than a
+     shared component because the facts differ (24-hour service, opening hours,
+     OSM link instead of NPSN). -->
+<div class="card trans-detail" id="puskes-detail" hidden>
+  <div class="card-top">
+    <div class="eyebrow" id="pk-eyebrow"></div>
+    <div class="card-name" id="pk-name"></div>
+    <button class="card-min" id="pk-min" type="button"
+            aria-label="Perkecil info" title="Perkecil info">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M6 9l6 6 6-6"/>
+      </svg>
+    </button>
+  </div>
+  <div class="ladder" id="pk-ladder"></div>
+  <div class="kids" id="pk-facts"></div>
+  <div class="card-foot">
+    <span class="code" id="pk-source"></span>
+  </div>
+</div>
+
 <!-- answer card ------------------------------------------------------- -->
 <div class="card" id="card"></div>
 
@@ -270,7 +318,8 @@
   <a href="https://openfreemap.org" rel="noopener">OpenFreeMap</a> ·
   Roads: <a href="https://jdih-dprd.depok.go.id/" rel="noopener">Perda Kota Depok No. 9/2022</a> Pasal 16 ·
   Transport: <a href="https://www.openstreetmap.org/copyright" rel="noopener">OpenStreetMap</a> ·
-  <a href="https://berita.depok.go.id/" rel="noopener">Dishub Kota Depok</a>
+  <a href="https://berita.depok.go.id/" rel="noopener">Dishub Kota Depok</a> ·
+  Puskesmas 24 jam: <a href="https://dinkes.depok.go.id/" rel="noopener">Dinkes Kota Depok</a>
 </footer>
 
 <script src="/vendor/maplibre-gl.js"></script>
@@ -278,6 +327,7 @@
 <script src="/src/roads.js"></script>
 <script src="/src/transport.js"></script>
 <script src="/src/schools.js"></script>
+<script src="/src/puskesmas.js"></script>
 <script src="/src/app.js"></script>
 </body>
 </html>

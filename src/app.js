@@ -70,6 +70,9 @@ const PALETTE = {
     // Schools are teal: a fourth family, so a school pin can never be read as a
     // selected kecamatan (green), road (orange) or route (violet).
     school: '#0f766e',
+    // Puskesmas are rose: a fifth family, so a health pin can never be read as
+    // a school (teal), route (violet), road (orange) or kecamatan (green).
+    puskes: '#b91c1c',
   },
   dark: {
     sel: '#6fd39b', selFill: '#6fd39b', peer: '#3f7f5c', peerFill: '#38745a',
@@ -77,6 +80,7 @@ const PALETTE = {
     road: '#fb923c',
     trans: '#a78bfa',
     school: '#2dd4bf',
+    puskes: '#fb7185',
   },
 };
 
@@ -109,6 +113,8 @@ const SRC_TRANS_ALL = 'rute-semua';
    context underneath it. */
 const SRC_SCHOOL = 'sekolah-terpilih';
 const SRC_SCHOOL_ALL = 'sekolah-semua';
+const SRC_PUSKES = 'puskes-terpilih';
+const SRC_PUSKES_ALL = 'puskes-semua';
 let mapReady = false;
 
 /**
@@ -190,6 +196,12 @@ function paint() {
     ['school-sel', 'circle-stroke-color', p.halo],
     ['school-sel-label', 'text-color', p.school],
     ['school-sel-label', 'text-halo-color', p.halo],
+    ['puskes-all', 'circle-color', p.puskes],
+    ['puskes-all', 'circle-stroke-color', p.halo],
+    ['puskes-sel', 'circle-color', p.puskes],
+    ['puskes-sel', 'circle-stroke-color', p.halo],
+    ['puskes-sel-label', 'text-color', p.puskes],
+    ['puskes-sel-label', 'text-halo-color', p.halo],
   ]) {
     if (map.getLayer(id)) map.setPaintProperty(id, prop, val);
   }
@@ -443,6 +455,56 @@ function addLayers() {
       },
     });
   }
+  // Puskesmas. Same three-layer shape as the schools: a thin context layer of
+  // every pinned facility, and the selected one with its label on top.
+  for (const id of [SRC_PUSKES_ALL, SRC_PUSKES]) {
+    if (!map.getSource(id)) {
+      map.addSource(id, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    }
+  }
+  if (!map.getLayer('puskes-all')) {
+    map.addLayer({
+      id: 'puskes-all', type: 'circle', source: SRC_PUSKES_ALL,
+      paint: {
+        'circle-radius': ['interpolate', ['linear'], ['zoom'],
+          11, 3, 13, 4.5, 16, 7],
+        'circle-color': PALETTE[state.theme].puskes,
+        'circle-opacity': 0.62,
+        'circle-stroke-width': 1,
+        'circle-stroke-color': PALETTE[state.theme].halo,
+        'circle-stroke-opacity': 0.5,
+      },
+    });
+  }
+  if (!map.getLayer('puskes-sel')) {
+    map.addLayer({
+      id: 'puskes-sel', type: 'circle', source: SRC_PUSKES,
+      paint: {
+        'circle-radius': ['interpolate', ['linear'], ['zoom'],
+          11, 5, 13, 8, 16, 12],
+        'circle-color': PALETTE[state.theme].puskes,
+        'circle-stroke-width': 2.5,
+        'circle-stroke-color': PALETTE[state.theme].halo,
+      },
+    });
+    map.addLayer({
+      id: 'puskes-sel-label', type: 'symbol', source: SRC_PUSKES,
+      layout: {
+        'text-field': ['get', 'name'],
+        'text-size': 12,
+        'text-font': ['Noto Sans Regular'],
+        'text-anchor': 'top',
+        'text-offset': [0, 1.1],
+        'text-max-width': 14,
+        'text-allow-overlap': false,
+      },
+      paint: {
+        'text-color': PALETTE[state.theme].puskes,
+        'text-halo-color': PALETTE[state.theme].halo,
+        'text-halo-width': 2,
+      },
+    });
+  }
   if (!map.getLayer('trans-sel')) {
     map.addLayer({
       id: 'trans-sel-halo', type: 'line', source: SRC_TRANS,
@@ -653,12 +715,15 @@ function selectVillage(code, opts = {}) {
 function clearSubCards() {
   renderRouteCard(null);
   renderSchoolCard(null);
+  renderPuskesCard(null);
   selectedRoute = null;
   selectedSchool = null;
   // Drop the markers too, or a stale pin stays on the map with no card for it.
   const rt = map.getSource(SRC_TRANS), sr = map.getSource(SRC_SCHOOL);
+  const pr = map.getSource(SRC_PUSKES);
   if (rt) rt.setData({ type: 'FeatureCollection', features: [] });
   if (sr) sr.setData({ type: 'FeatureCollection', features: [] });
+  if (pr) pr.setData({ type: 'FeatureCollection', features: [] });
   card.hidden = false;
 }
 
@@ -1441,6 +1506,7 @@ const TABS = [
   { id: 'road', tab: 'tab-road', panel: 'panel-road' },
   { id: 'transport', tab: 'tab-transport', panel: 'panel-transport' },
   { id: 'school', tab: 'tab-school', panel: 'panel-school' },
+  { id: 'puskes', tab: 'tab-puskes', panel: 'panel-puskes' },
 ];
 
 function setTab(which) {
@@ -2305,6 +2371,252 @@ if (schoolSearch) {
     if (first) first.click();
   });
 }
+
+/* ---------- puskesmas ---------- */
+/* Same three pieces as the schools: a list grouped by kecamatan, a selected
+   marker with a detail card, and a show-all overlay. The data is thinner than
+   the schools' -- OSM covers 11 of the city's facilities with a pin, and six
+   UPTD mains from the Dinkes register carry no pin -- so the note says so
+   instead of hiding it. Puskesmas Pembantu are kept too: they are where most
+   people actually get immunised and check-ups. */
+
+const PUSKESMAS = window.DEPOK_PUSKESMAS || { source: '', list: [] };
+const puskesAllBox = document.getElementById('puskes-all');
+const puskesNote = document.getElementById('puskes-note');
+const puskesGroups = document.getElementById('puskes-groups');
+const puskesSearch = document.getElementById('puskes-search');
+const puskesEmpty = document.getElementById('puskes-empty');
+const pkDetail = document.getElementById('puskes-detail');
+const pkEyebrow = document.getElementById('pk-eyebrow');
+const pkName = document.getElementById('pk-name');
+const pkLadder = document.getElementById('pk-ladder');
+const pkFacts = document.getElementById('pk-facts');
+const pkSource = document.getElementById('pk-source');
+const pkMin = document.getElementById('pk-min');
+let selectedPuskes = null;
+let showAllPuskes = false;
+
+// Same rule as the schools: only a real point becomes a map feature. The six
+// register-only UPTDs stay in the list and the card, marked without a pin.
+function hasPuskesPin(p) {
+  return p.lon != null && p.lat != null && Number.isFinite(p.lon) && Number.isFinite(p.lat);
+}
+
+function puskesFeature(p) {
+  return {
+    type: 'Feature',
+    geometry: { type: 'Point', coordinates: [p.lon, p.lat] },
+    properties: { name: p.name, key: p.key },
+  };
+}
+
+// Village/district by point-in-polygon (placeForSchool is a generic pip over
+// the kelurahan polygons -- the name is historical, the geometry is not). Run
+// once at load so grouping does not recompute it per render.
+for (const p of PUSKESMAS.list) {
+  if (!hasPuskesPin(p)) continue;
+  const place = placeForSchool(p.lon, p.lat);
+  if (place) {
+    if (!p.district) p.district = place.district;
+    p.village = place.village;
+  }
+}
+
+function renderPuskesCard(p) {
+  if (!p) { pkDetail.hidden = true; return; }
+  pkDetail.hidden = false;
+  pkEyebrow.textContent = p.kind === 'kelurahan' ? 'Puskesmas kelurahan'
+    : p.kind === 'pembantu' ? 'Puskesmas pembantu' : 'UPTD Puskesmas';
+  pkName.textContent = p.name;
+
+  // Ladder: village -> district -> city, the same hierarchy as the school card.
+  // For register-only entries the village is unknown and only the district
+  // shows, which is still more useful than an empty ladder.
+  pkLadder.innerHTML = '';
+  for (const [lvl, val] of [['Kelurahan', p.village], ['Kecamatan', p.district], ['Kota', 'Depok']]) {
+    if (!val) continue;
+    const row = document.createElement('div');
+    row.className = 'rung';
+    row.innerHTML = '<i class="dot"></i><span class="lvl"></span><span class="nm leg"></span>';
+    row.querySelector('.lvl').textContent = lvl;
+    row.querySelector('.nm').textContent = val;
+    pkLadder.append(row);
+  }
+
+  // Facts, every field optional: a register-only entry has nothing but its
+  // name and district, and the card explains the missing pin instead of
+  // reading as a bug.
+  const facts = [];
+  if (p.open24) facts.push(['Layanan', '<b>24 jam</b> — jadwal Dinkes 2025']);
+  if (p.opening_hours) facts.push(['Jam buka', esc(p.opening_hours)]);
+  if (p.address) facts.push(['Alamat', esc(p.address)]);
+  if (p.phone) facts.push(['Telp', `<span class="code">${esc(p.phone)}</span>`]);
+  if (p.website) facts.push(['Web', esc(p.website)]);
+  if (hasPuskesPin(p)) {
+    facts.push(['Koordinat', `${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}`]);
+    facts.push(['Titik', `OpenStreetMap <span class="code">${esc(p.osm)}</span>`]);
+  } else {
+    facts.push(['Titik', `<span class="muted">belum ada pin di OpenStreetMap</span>`]);
+  }
+  pkFacts.className = 'kids trans-facts';
+  pkFacts.innerHTML = facts
+    .map(([k, v]) => `<div class="trans-fact"><dt>${k}</dt><dd>${v}</dd></div>`).join('');
+
+  pkSource.textContent = PUSKESMAS.source || '';
+  const expanded = !document.body.classList.contains('card-collapsed');
+  pkMin.setAttribute('aria-label', expanded ? 'Perkecil info' : 'Perluas info');
+  pkMin.title = expanded ? 'Perkecil info' : 'Perluas info';
+}
+
+pkMin.addEventListener('click', () => {
+  document.body.classList.toggle('card-collapsed');
+  relayoutOverlays();
+});
+
+/** Draw the selected puskesmas, zoom to it, and show its card. */
+function highlightPuskes(key) {
+  selectedPuskes = key;
+  if (!map.getSource(SRC_PUSKES)) return;
+  const p = PUSKESMAS.list.find(x => x.key === key);
+  const src = map.getSource(SRC_PUSKES);
+  if (!p) {
+    src.setData({ type: 'FeatureCollection', features: [] });
+    renderPuskesCard(null);
+    // Hand the screen back to the area card, the same way the other menus do.
+    card.hidden = false;
+    renderCard();
+    renderPuskesmas();
+    relayoutOverlays();
+    return;
+  }
+  if (hasPuskesPin(p)) {
+    src.setData({ type: 'FeatureCollection', features: [puskesFeature(p)] });
+    map.flyTo({ center: [p.lon, p.lat], zoom: Math.max(map.getZoom(), 15), duration: 700 });
+  } else {
+    src.setData({ type: 'FeatureCollection', features: [] });
+  }
+  // Same stand-aside as a route or school: two .cards in one slot overlap.
+  card.hidden = true;
+  renderRouteCard(null);
+  renderSchoolCard(null);
+  renderPuskesCard(p);
+  renderPuskesmas();
+  relayoutOverlays();
+}
+
+/** Show every pinned puskesmas at once. Points, so this is cheap -- no
+ *  fitBounds guard beyond the obvious one, unlike the route overlay. */
+function toggleAllPuskes(on) {
+  showAllPuskes = !!on;
+  if (!map.getSource(SRC_PUSKES_ALL)) return;
+  const src = map.getSource(SRC_PUSKES_ALL);
+  if (!showAllPuskes) {
+    src.setData({ type: 'FeatureCollection', features: [] });
+    return;
+  }
+  const placed = PUSKESMAS.list.filter(hasPuskesPin);
+  src.setData({ type: 'FeatureCollection', features: placed.map(puskesFeature) });
+  const lons = placed.map(p => p.lon), lats = placed.map(p => p.lat);
+  if (lons.length) {
+    map.fitBounds([[Math.min(...lons), Math.min(...lats)],
+      [Math.max(...lons), Math.max(...lats)]], {
+      padding: { top: 110, bottom: 220, left: 70, right: 70 },
+      maxZoom: 13, duration: 700,
+    });
+  }
+}
+puskesAllBox.addEventListener('change', () => toggleAllPuskes(puskesAllBox.checked));
+
+function renderPuskesmas(query) {
+  if (!puskesGroups) return;
+  // 17 rows fit on one screen, but the search box is kept anyway: health
+  // lookups are usually by kecamatan or kelurahan, and a pattern-match across
+  // name + district + village covers both.
+  const q = (query == null ? (puskesSearch ? puskesSearch.value : '') : query)
+    .trim().toLowerCase();
+  const byDistrict = new Map();
+  let shown = 0;
+  for (const p of PUSKESMAS.list) {
+    if (q && !(p.name.toLowerCase().includes(q)
+      || (p.district || '').toLowerCase().includes(q)
+      || (p.village || '').toLowerCase().includes(q))) continue;
+    shown++;
+    if (!byDistrict.has(p.district)) byDistrict.set(p.district, []);
+    byDistrict.get(p.district).push(p);
+  }
+  const districts = Array.from(byDistrict.entries())
+    .sort((a, b) => String(a[0] || 'kecamatan tidak tercatat')
+      .localeCompare(String(b[0] || 'kecamatan tidak tercatat'), 'id'));
+
+  puskesGroups.innerHTML = districts.map(([d, list]) => {
+    const label = d || 'kecamatan tidak tercatat';
+    list.sort((a, b) => a.name.localeCompare(b.name, 'id'));
+    return `<div class="tg" data-open="1">
+      <button class="tg-head" type="button" aria-expanded="true">
+        <svg class="tg-chev" width="11" height="11" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="3" stroke-linecap="round"
+             stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+        <span class="tg-t">Kecamatan ${esc(label)}</span><span class="tg-n">${list.length}</span>
+      </button>
+      <div class="tg-body">${list.map(p => `
+        <button class="road-row${p.key === selectedPuskes ? ' is-sel' : ''}" type="button"
+                data-pkey="${esc(p.key)}">
+          <span class="rr-badge">${esc(p.kind === 'kelurahan' ? 'kel' : p.kind === 'pembantu' ? 'pemb' : 'UPTD')}</span>
+          <span class="rr-name">${esc(p.name.replace(/^UPTD /, ''))}</span>
+          ${p.open24 ? '<span class="rr-ref" title="melayani 24 jam (Dinkes 2025)">24</span>' : ''}
+          ${hasPuskesPin(p) ? '' : '<span class="rr-nopt" title="belum ada pin di OpenStreetMap">no pin</span>'}
+        </button>`).join('')}
+      </div></div>`;
+  }).join('');
+
+  // A wrong query can legitimately match nothing; say so.
+  if (puskesEmpty) puskesEmpty.hidden = shown > 0;
+
+  // Provenance, with the numbers that matter: how many facilities the list has,
+  // how many carry a pin, how many serve 24 hours. The Dinkes register sits
+  // behind a WAF that rejects non-Indonesian IPs, so the official count
+  // (38-39 UPTD) is cited, not claimed as part of this dataset.
+  const n = PUSKESMAS.list.length;
+  const placed = PUSKESMAS.list.filter(hasPuskesPin).length;
+  const noPt = n - placed;
+  const d24 = PUSKESMAS.list.filter(p => p.open24).length;
+  puskesNote.innerHTML = `<b>${n}</b> fasilitas di <b>${new Set(PUSKESMAS.list.map(p => p.district)).size}</b> kecamatan `
+    + `(11 di Kota Depok). Pin dari OpenStreetMap: <b>${placed}</b>; `
+    + (noPt ? `<b>${noPt}</b> UPTD dari daftar Dinkes terdaftar tanpa pin. ` : '')
+    + `<b>${d24}</b> melayani 24 jam (jadwal Dinkes 2025). `
+    + `Dinkes mencatat 38–39 UPTD; cakupan pin lebih tipis dari daftar resmi. `
+    + `Cari nama puskesmas atau kelurahan.`;
+}
+
+if (puskesGroups) {
+  puskesGroups.addEventListener('click', e => {
+    const head = e.target.closest('.tg-head');
+    if (head) {
+      const g = head.closest('.tg');
+      g.dataset.open = g.dataset.open === '1' ? '0' : '1';
+      return;
+    }
+    const row = e.target.closest('[data-pkey]');
+    if (!row) return;
+    const key = row.dataset.pkey;
+    if (key === selectedPuskes) {
+      highlightPuskes(null);          // tapping the selection clears it
+    } else {
+      highlightPuskes(key);
+    }
+    if (window.matchMedia('(max-width: 760px)').matches) setSidebar(false);
+  });
+}
+
+if (puskesSearch) {
+  puskesSearch.addEventListener('input', () => renderPuskesmas(puskesSearch.value));
+  puskesSearch.addEventListener('keydown', e => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const first = puskesGroups.querySelector('[data-pkey]');
+    if (first) first.click();
+  });
+}
 document.getElementById('transport-card-x')
   .addEventListener('click', () => highlightRoute(null));
 
@@ -2316,6 +2628,7 @@ renderAreaList();
 renderRoads();
 renderTransport();
 renderSchools();
+renderPuskesmas();
 sideEl.hidden = true;
 /* Measure the attribution before the first overlay placement, so the card does
    not paint on top of the licence line and then jump. */
@@ -2339,5 +2652,5 @@ if (hash) {
 
 window.__depok = {
   map, state, KEL, KEC, rank, goCity, openDistrict, selectVillage, selectDistrict, applyTheme,
-  setSidebar, setTab, renderAreaList, renderRoads, ROADS,
+  setSidebar, setTab, renderAreaList, renderRoads, ROADS, PUSKESMAS, highlightPuskes,
 };
