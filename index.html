@@ -51,16 +51,6 @@
 <!-- sidebar ------------------------------------------------------------ -->
 <aside class="sidebar" id="sidebar" aria-label="Daftar wilayah dan jalan">
   <div class="side-head">
-    <div class="side-tabs" role="tablist">
-      <button class="side-tab is-on" id="tab-area" role="tab" aria-selected="true"
-              aria-controls="panel-area" type="button">Wilayah</button>
-      <button class="side-tab" id="tab-road" role="tab" aria-selected="false"
-              aria-controls="panel-road" type="button">Jalan</button>
-      <button class="side-tab" id="tab-transport" role="tab" aria-selected="false"
-              aria-controls="panel-transport" type="button">Transport</button>
-      <button class="side-tab" id="tab-school" role="tab" aria-selected="false"
-              aria-controls="panel-school" type="button">SMA/SMK</button>
-    </div>
     <!-- Theme lives here rather than in the search bar, so the input gets the
          full width of the top row. -->
     <button id="theme" class="side-theme" type="button"
@@ -80,8 +70,20 @@
     </button>
   </div>
 
+  <!-- Accordion, not tabs: the four sections are stacked collapsible headers.
+       One scroller (.side-body) owns the column; the open section's panel
+       stretches to fill the remaining height and keeps its own internal
+       scroller, sticky note and locate rows unchanged from the tab layout. -->
+  <div class="side-body">
+
+    <button class="acc-head is-on" id="tab-area" aria-expanded="true"
+            aria-controls="panel-area" type="button">
+      <svg class="acc-chev" width="12" height="12" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+      <span>Wilayah</span>
+    </button>
   <!-- areas -->
-  <div class="side-panel" id="panel-area" role="tabpanel" aria-labelledby="tab-area">
+  <div class="side-panel" id="panel-area" aria-labelledby="tab-area">
     <!-- Lived under the search box as .search-meta; it is area information, so
          it belongs with the area list. Outside the scroller on purpose: it is
          panel context, not list content, and areaList.innerHTML is replaced on
@@ -97,8 +99,14 @@
     <div class="side-scroll" id="area-list"></div>
   </div>
 
+    <button class="acc-head" id="tab-road" aria-expanded="false"
+            aria-controls="panel-road" type="button">
+      <svg class="acc-chev" width="12" height="12" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+      <span>Jalan</span>
+    </button>
   <!-- roads -->
-  <div class="side-panel" id="panel-road" role="tabpanel" aria-labelledby="tab-road" hidden>
+  <div class="side-panel" id="panel-road" aria-labelledby="tab-road" hidden>
     <!-- One scroll container holding both the note and the groups. Two things
          depend on this being a single scroller: the 77 ruas need somewhere to
          scroll (as a direct child of .side-panel they were clipped by the
@@ -112,14 +120,20 @@
     </div>
   </div>
 
+    <button class="acc-head" id="tab-transport" aria-expanded="false"
+            aria-controls="panel-transport" type="button">
+      <svg class="acc-chev" width="12" height="12" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+      <span>Transport</span>
+    </button>
   <!-- transport ------------------------------------------------------ -->
-  <div class="side-panel" id="panel-transport" role="tabpanel"
+  <div class="side-panel" id="panel-transport"
        aria-labelledby="tab-transport" hidden>
     <!-- Show every intra-city trayek at once, rather than one at a time. The
          point is comparison: which corridors overlap, where the gaps are. -->
     <div class="side-locate" id="trans-all-wrap">
       <label class="trans-all">
-        <input type="checkbox" id="trans-all">
+        <span class="tog"><input type="checkbox" id="trans-all"><i aria-hidden="true"></i></span>
         <span>Tampilkan semua angkot dalam kota</span>
       </label>
     </div>
@@ -128,14 +142,20 @@
       <div id="transport-groups"></div>
     </div>
   </div>
+    <button class="acc-head" id="tab-school" aria-expanded="false"
+            aria-controls="panel-school" type="button">
+      <svg class="acc-chev" width="12" height="12" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+      <span>SMA/SMK</span>
+    </button>
 <!-- secondary schools ------------------------------------------------- -->
-  <div class="side-panel" id="panel-school" role="tabpanel"
+  <div class="side-panel" id="panel-school"
        aria-labelledby="tab-school" hidden>
     <!-- All points at once, so the gaps in coverage are visible rather than
          hidden one-behind-another. -->
     <div class="side-locate">
       <label class="trans-all">
-        <input type="checkbox" id="school-all">
+        <span class="tog"><input type="checkbox" id="school-all"><i aria-hidden="true"></i></span>
         <span>Tampilkan semua sekolah</span>
       </label>
     </div>
@@ -148,6 +168,8 @@
       <p class="road-empty" id="school-empty" hidden>Tidak ada sekolah yang cocok.</p>
     </div>
   </div>
+
+  </div><!-- /.side-body -->
 </aside>
 
 <!-- selected route banner -------------------------------------------- -->

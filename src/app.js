@@ -1377,7 +1377,7 @@ function setSidebar(open) {
   if (open) {
     syncMapSize();
     // Focus the panel so keyboard users land inside it rather than behind it.
-    const first = sideEl.querySelector('.side-tab.is-on');
+    const first = sideEl.querySelector('.acc-head.is-on');
     if (first) first.focus({ preventScroll: true });
   }
   syncToggle();
@@ -1431,10 +1431,11 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && !sideEl.hidden) setSidebar(false);
 });
 
-/* Three tabs now, so this is driven by a name rather than a boolean. The earlier
- * two-tab version was `const road = which === 'road'` and toggled both tabs off
- * that one flag, which cannot express a third panel: 'area' and 'transport'
- * would both fall through to the same branch. */
+/* Accordion, not tabs. The four sections are stacked collapsible headers:
+ * opening one closes the others, and tapping the open header collapses it, so
+ * all-closed is a legal state. Same element ids as the tab strip it replaced --
+ * tab-* is now the section header, panel-* its collapsible body -- so nothing
+ * outside this function needed to change. */
 const TABS = [
   { id: 'area', tab: 'tab-area', panel: 'panel-area' },
   { id: 'road', tab: 'tab-road', panel: 'panel-road' },
@@ -1443,28 +1444,23 @@ const TABS = [
 ];
 
 function setTab(which) {
-  let active = null;
   for (const t of TABS) {
-    const on = t.id === which;
-    const tabEl = document.getElementById(t.tab);
+    const on = which !== null && t.id === which;
+    const headEl = document.getElementById(t.tab);
     const panelEl = document.getElementById(t.panel);
-    if (tabEl) {
-      tabEl.classList.toggle('is-on', on);
-      tabEl.setAttribute('aria-selected', String(on));
-      if (on) active = tabEl;
+    if (headEl) {
+      headEl.classList.toggle('is-on', on);
+      headEl.setAttribute('aria-expanded', String(on));
     }
     if (panelEl) panelEl.hidden = !on;
-  }
-  // Four tabs do not fit beside the theme and close buttons on a phone, so the
-  // strip scrolls. Bring the chosen tab into view, otherwise the last one can be
-  // active while sitting off-screen.
-  if (active && active.scrollIntoView) {
-    active.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }
 }
 for (const t of TABS) {
   const el = document.getElementById(t.tab);
-  if (el) el.addEventListener('click', () => setTab(t.id));
+  if (el) el.addEventListener('click', () => {
+    // is-on is read at click time: tapping the open section collapses it.
+    setTab(el.classList.contains('is-on') ? null : t.id);
+  });
 }
 
 /** Area list: 11 kecamatan, then their kelurahan once one is open. */

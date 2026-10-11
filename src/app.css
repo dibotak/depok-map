@@ -335,59 +335,59 @@ body.card-collapsed .card { padding-bottom: 10px; }
 .sidebar[hidden] { display: none; }
 
 .side-head {
-  display: flex; align-items: center; gap: 8px;
-  padding: 8px 8px 8px 10px;
+  display: flex; align-items: center; justify-content: flex-end; gap: 8px;
+  padding: 8px;
   border-bottom: 1px solid var(--border);
   flex: none;
-  /* Four tab labels plus a 40px theme button and a 40px close button do not
-     fit on one 316px row: the tabs alone need ~309px, so the theme button was
-     pushed on top of the tab strip. The strip wraps to its own line via
-     flex-wrap and takes the full width, so the buttons keep their place and
-     the tabs get the room they need. */
-  flex-wrap: wrap;
-}
-.side-tabs {
-  display: flex; gap: 2px;
-  /* min-width:0 is what allows a flex child to shrink below its content; the
-     tabs are the only part of this row allowed to give way, because the theme
-     and close buttons are 40px tap targets that must stay put and visible.
-     Without it four tabs overflow by ~76px and push the theme button on top of
-     the tab strip. */
-  /* order:0 on a full-width basis takes the whole first line. */
-  flex: 1 1 100%; min-width: 0;
-  order: 0;
-  /* Re-add the original 8px head gap above the buttons. */
-  margin-bottom: 8px;
-  scrollbar-width: none;
-  -webkit-overflow-scrolling: touch;
-}
-/* The row scrolls rather than squashing the labels to nothing; the is-on tab is
-   scrolled into view on switch so the active tab is never hidden off-screen. */
-.side-tabs::-webkit-scrollbar { display: none; }
-.side-tab {
-  /* flex-shrink:0 keeps every label readable at its natural width; the parent
-     scrolls instead of clipping the labels. */
-  flex: 0 0 auto; height: 30px; padding: 0 6px;
-  white-space: nowrap;
-  font: inherit; font-size: 12.5px; font-weight: 580; color: var(--muted);
-  background: transparent; border: 1px solid transparent; border-radius: 7px;
-  cursor: pointer;
-  transition: color var(--dur) var(--ease), background var(--dur) var(--ease);
-}
-.side-tab:hover { color: var(--ink-2); }
-.side-tab.is-on {
-  color: var(--ink); background: var(--bg);
-  border-color: var(--border);
 }
 .side-close {
-  order: 2; flex: none; width: 30px; height: 30px;
+  flex: none; width: 30px; height: 30px;
   display: flex; align-items: center; justify-content: center;
   color: var(--muted); background: transparent;
   border: 1px solid transparent; border-radius: 7px; cursor: pointer;
 }
 .side-close:hover { color: var(--ink); border-color: var(--border); }
 
-.side-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+/* --- accordion sections --- */
+/* Stacked collapsible headers instead of a tab strip. The old strip overflowed
+   by ~76px beside the theme and close buttons and had to scroll its own row;
+   stacking removed the fit problem entirely. The column is owned by one
+   scroller (.side-body); the open panel is flex:1, so it keeps exactly the
+   remaining height and its internal .side-scroll keeps scrolling as before. */
+.side-body {
+  flex: 1; min-height: 0;
+  display: flex; flex-direction: column;
+  overflow-y: auto; overflow-x: hidden;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+.side-body::-webkit-scrollbar { width: 9px; }
+.side-body::-webkit-scrollbar-track { background: transparent; }
+.side-body::-webkit-scrollbar-thumb {
+  background: var(--border-strong); border-radius: 999px;
+  border: 3px solid transparent; background-clip: content-box;
+}
+.acc-head {
+  flex: none;
+  display: flex; align-items: center; gap: 9px;
+  padding: 10px 13px;
+  font: inherit; font-size: 13px; font-weight: 620; text-align: left;
+  color: var(--muted); background: var(--bg);
+  border: 0; border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: color var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+.acc-head:hover { color: var(--ink); }
+.acc-head.is-on { color: var(--ink); background: var(--surface-2); }
+.acc-chev {
+  flex: none; color: var(--faint); line-height: 1;
+  transition: transform var(--dur) var(--ease);
+}
+.acc-head.is-on .acc-chev { transform: rotate(90deg); color: var(--accent); }
+/* Sections the user has collapsed sit as quiet headers between open ones. */
+.side-panel { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 .side-panel[hidden] { display: none; }
 /* The scroll container for BOTH panels. Previously only the area list had it,
    so the 77-row road list overflowed and was silently clipped by the panel's
@@ -687,7 +687,7 @@ body.side-open .card {
   /* Tap targets: 44px is the WCAG 2.5.5 / iOS minimum for anything a thumb has
      to hit. The 30x30 icon buttons and 30px-tall rows measured well under it. */
   .side-theme, .side-close { width: 40px; height: 40px; }
-  .side-tab { height: 40px; }
+  .acc-head { padding: 10px 13px; min-height: 44px; }
   .locate-btn { height: 40px; }
   .card-min { width: 40px; height: 40px; top: 6px; right: 6px; }
   .side-row { padding: 12px 13px; min-height: 44px; }
@@ -852,16 +852,47 @@ html[data-theme="dark"] .trans-warn { color: #fbbf24; }
 .trans-detail .card-foot .code { display: block; line-height: 1.4; }
 
 /* show-all toggle */
+/* A switch, not a bare checkbox: the track takes each section's own accent and
+   the knob slides on --dur. The real <input> stays in the DOM under an opacity
+   of 0, so keyboard focus, .checked state and change events behave exactly as
+   before -- only the paint is custom. */
 .trans-all {
   display: flex; align-items: center; gap: 8px;
   font-size: 12.5px; color: var(--ink-2); cursor: pointer; user-select: none;
 }
-.trans-all input {
-  flex: none; width: 15px; height: 15px; margin: 0; cursor: pointer;
-  accent-color: #6d28d9;
-}
-html[data-theme="dark"] .trans-all input { accent-color: #a78bfa; }
 .trans-all:hover { color: var(--ink); }
+.tog { position: relative; flex: none; width: 34px; height: 20px; }
+.tog input {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  margin: 0; opacity: 0; cursor: pointer;
+}
+.tog i {
+  position: absolute; inset: 0; pointer-events: none;
+  display: block;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.tog i::after {
+  content: ""; position: absolute; top: 2px; left: 2px;
+  width: 14px; height: 14px; border-radius: 50%;
+  background: var(--muted);
+  transition: transform var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+.tog input:checked + i {
+  background: var(--tog-accent, var(--accent));
+  border-color: var(--tog-accent, var(--accent));
+}
+.tog input:checked + i::after { transform: translateX(14px); background: #fff; }
+.tog input:focus-visible + i { box-shadow: 0 0 0 3px var(--accent-soft); }
+/* Per-section accents: violet for routes, teal for schools — the same colours
+   the map layers and detail cards already use, so the switch never reads as a
+   third, unrelated accent. */
+#panel-transport { --tog-accent: #6d28d9; }
+#panel-school { --tog-accent: #0f766e; }
+html[data-theme="dark"] #panel-transport { --tog-accent: #a78bfa; }
+html[data-theme="dark"] #panel-school { --tog-accent: #2dd4bf; }
 
 /* ---------- secondary schools ---------- */
 /* Teal, a fourth colour family alongside the green admin areas, orange roads
