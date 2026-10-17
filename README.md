@@ -29,7 +29,7 @@ Connect the repo in the Pages dashboard with:
 The build command prunes the two things the site never loads: `public/data/`
 (874 KB of source JSON for the build scripts) and `scripts/`. Neither is
 referenced by `index.html` or `app.js` — `src/data.js` is the only boundary
-data the browser fetches, so pruning them is safe and leaves **~2.0 MB** to
+data the browser fetches, so pruning them is safe and leaves **~3.1 MB** to
 publish.
 
 Cloudflare Pages has no ignore file for Git-based deploys, so pruning has to
@@ -45,23 +45,25 @@ would 404 every asset — use `map.dibotak.com`, not a subpath.
 
 ## What it does
 
-- **Sidebar with four tabs**, opened by the **icon-only** button beside the
-  search bar on the same row. The button carries no text — its `aria-label`
-  ("Buka daftar wilayah dan jalan" / "Tutup daftar") is the only name, and it
-  flips with state. *Wilayah* lists all 11 kecamatan with their child counts;
-  opening one appends its kelurahan underneath, and the current selection stays
-  highlighted as you click through the map. *Jalan* lists the 77 official ruas
-  grouped by class, collapsible. *Transport* lists angkot routes grouped by
-  trayek. *SMA/SMK* lists 30 secondary schools.
-  - **The tab strip wraps.** `.side-head` is `flex-wrap: wrap` and `.side-tabs`
-    is `flex: 1 1 100%`, so the four labels take the whole first line (~346px of
-    a 316px sidebar's inner width, which is why they previously overflowed) and
-    the theme and close buttons sit right-aligned on a second line. Before this,
-    `.side-tab { flex: 1 }` with no `min-width: 0` could not shrink below its
-    content, so the labels pushed the 40px theme button on top of the tab strip.
-    The tab label *Transportasi* was also shortened to *Transport* (106px → 62px)
-    for the same reason. `setTab()` calls `scrollIntoView` so the active tab is
-    visible even if the strip does scroll on a narrower phone.
+- **Sidebar with seven collapsible sections**, opened by the **icon-only**
+  button beside the search bar on the same row. The button carries no text —
+  its `aria-label` ("Buka daftar wilayah dan jalan" / "Tutup daftar") is the
+  only name, and it flips with state. *Wilayah* lists all 11 kecamatan with
+  their child counts; opening one appends its kelurahan underneath, and the
+  current selection stays highlighted as you click through the map. *Jalan*
+  lists the 77 official ruas grouped by class. *Transport* lists angkot routes
+  grouped by trayek. *SMA/SMK* lists 242 secondary schools. *Puskesmas* lists
+  the 37 facilities in the Dinkes register. *Faskes* adds the 82 facilities
+  OpenStreetMap knows outside that register, and *Banjir* the 8 curated
+  flood-report points. Tapping the open section collapses it, so the map gets
+  the column back.
+  - **Accordion, not tabs.** A tab strip could not hold seven labels: it
+    overflowed the 316px sidebar before they even all existed (~346px for
+    four), and `.side-tab { flex: 1 }` without `min-width: 0` could not shrink
+    below its content, pushing the 40px theme button on top of the strip.
+    Stacked headers wrap by nature, collapsed sections sit as quiet headers
+    between open ones, and `setTab()` is the single owner of the open state —
+    exactly one panel is ever open.
 - **Search fills the row.** The top bar is two grid columns — the icon button,
   then the search stretching across everything left over — so the input takes
   ~80% of a phone's width and ~94% on desktop. It is no longer centred: with
@@ -147,6 +149,11 @@ src/app.js            map, drill-down, search, theme, geolocation
 src/app.css           theme tokens (light/dark) + all styling
 src/data.js           generated — 74 features as window.DEPOK
 src/roads.js          generated — 77 ruas as window.DEPOK_ROADS (committed)
+src/transport.js      generated — angkot routes as window.DEPOK_TRANSPORT
+src/schools.js        generated — 242 schools as window.DEPOK_SCHOOLS
+src/puskesmas.js      generated — 37 Dinkes facilities as window.DEPOK_PUSKESMAS
+src/faskes.js         generated — 82 OSM health facilities as window.DEPOK_FASKES
+src/flood.js          generated — 8 curated flood reports as window.DEPOK_FLOOD
 public/data/          generated — the boundaries as JSON, build input only
 vendor/maplibre-gl.*  MapLibre GL JS 5.6 (vendored, no CDN at runtime)
 scripts/              data pipeline
@@ -176,7 +183,9 @@ here; nothing here reads from the lab.
 ## Secondary schools
 
 `scripts/fetch-sekolahkita.py` + `scripts/build-schools-sekolahkita.py` ->
-`src/schools.js`. **242 schools, 224 of them with official coordinates.**
+`src/schools.js`. **242 schools; 241 carry a pin** — 224 from the portal's own
+coordinates plus 17 recovered by hand (below), and one left unpinned on purpose
+rather than guessed onto the map.
 
 ### The API
 
@@ -208,7 +217,8 @@ read as secondary.
 
 This portal publishes `lintang`/`bujur` per school. No geocoding, no string
 matching, no false positives, and a real point for schools with no OSM presence
-at all. Coordinate count went **21 -> 224**.
+at all. Coordinate count went **21 -> 224** at this stage, then on to **241**
+once the leftover 17 were researched by hand (below).
 
 It is also more complete: 242 secondary schools versus the scrape's 250 rows
 across a slightly different jenjang mix, and `bentuk_pendidikan` is given
@@ -240,6 +250,32 @@ Near-null-island values (`|lat| < 0.01 and |lon| < 0.01`) count as missing.
 `MAS ULUMUL QUR'AN` is published at `0.0009, -0.0013` -- about 11,900km away --
 and "koordinat 11901 km di luar Kota Depok" on a card would be true and useless.
 
+### The 18 the portal could not place
+
+After the sign fix and the zero/near-zero test, 18 schools still had no point of
+their own. All 18 were resolved by hand or explicitly parked, and the outcome is
+checked in as a small override file rather than patched into the build:
+`scripts/data/school-coordinates.json` maps NPSN -> `{lat, lon, pin_src,
+source}`. The builder merges it over the portal rows, and `pin_src` rides along
+into `src/schools.js` so the card can say where a pin came from:
+
+| `pin_src` | n | where the point comes from |
+|---|---|---|
+| `gmaps` | 15 | the school's Google Maps place entry |
+| `situs` | 1 | a map link on the school's own site |
+| `dapodik` | 1 | the ministry's Dapodik listing (same complex) |
+
+No coordinate is invented: each `source` names the page the point was read
+from, and the test is still the city polygon plus proximity, not trust in the
+field. Seventeen of the eighteen survived it.
+
+The eighteenth — **SMK Negeri 5**, in Meruyung/Limo — is deliberately left
+unpinned. Its building is not built yet (the fasos/fasum land in Cinere
+Residence RW 05 came through in January 2026, per `berita.depok.go.id`, and
+classes currently borrow space at SMAN 6 / SMKN 2), so any pin would be a guess
+about a field. It keeps its row with a `no pin` badge, and the override file
+carries the same note, so the gap reads as a gap rather than a bug.
+
 ### Rate limiting
 
 Nothing was throttled: 29 list requests and 242 detail requests in 134s, no
@@ -253,10 +289,89 @@ rebuild is ~1s and byte-identical, verified by rerunning and diffing.
 
 ### UI
 
-`hasPoint()` gates every GeoJSON path, since 18 records have `lon: null` and
-would otherwise produce invalid features and break `fitBounds`. Those rows get a
-`no pin` badge and a card reading "belum ada koordinat di sumber". Cards carry
+`hasPoint()` gates every GeoJSON path, since one record has `lon: null` and
+would otherwise produce an invalid feature and break `fitBounds`. That row gets
+a `no pin` badge and a card reading why the pin is missing. Cards carry
 6+ facts: address, kelurahan, postcode, coordinates, source id, NPSN.
+
+## Health facilities: an official layer and an OSM complement
+
+Two layers answer two different questions, and the sidebar keeps them apart
+rather than merging them into one list of pins with mixed authority.
+
+**Puskesmas** (`scripts/build-puskesmas.py` -> `src/puskesmas.js`) is the
+official register: 37 facilities grouped under 11 kecamatan, from
+`dinkes.depok.go.id/User/portal_puskesmas`, embedded in the build as
+`PORTAL_ROWS` with each facility's own site URL carried through. Coordinates
+are matched, not invented: OpenStreetMap first (community pins plus
+address/phone/hours tags), then Google Maps for the rows OSM misses, with
+`pin_src` recorded so the card says which is which. A row that matches neither
+geo source is emitted without a pin, never guessed at a kelurahan centroid. The
+24-hour flag comes from the Dinkes schedule (Mar 2025) — exactly one UPTD per
+kecamatan, a cheap consistency check on the parse.
+
+The WAF is worth knowing about, because it shapes the build: the interactive
+facility map (`dsw.depok.go.id`) and every per-facility `pkm*.depok.go.id`
+site reject clients outside Indonesia (browser headers, headless Chrome and
+r.jina.ai all bounce). That is why the portal table is the source of truth and
+only the coordinates come from elsewhere.
+
+**Faskes** (`scripts/build-faskes.py` -> `src/faskes.js`) is the complement:
+the rest of the city's health facilities as mapped in OpenStreetMap — 82 rows
+of hospitals, clinics, doctors'/dentists' practices and pharmacies. Sources
+tried first and rejected: `sirs.kemkes.go.id` (login wall), `data.depok.go.id`
+(domain does not resolve as of Oct 2026), `depok.go.id` subdomains (F5 WAF).
+OSM is ODbL, print-safe, and rebuildable at will from the Overpass API.
+
+The build drops what would double or mislead: objects named
+"Puskesmas"/"Pustu" *and* the exact OSM refs the puskesmas build used (one
+facility must never be two pins), unnamed objects (a pin that cannot be
+labelled is noise on a printed map), obviously wrong mapper names, and points
+outside the city polygon (counted and printed, not swallowed). Same kind +
+name within 120m collapses to the richer record — a building outline and its
+POI node are one place. A hospital mistagged but named "Klinik ..." is listed
+as a clinic; the name the owner uses beats a stray tag. Responses are cached to
+`/tmp/depok-faskes-cache.json` for a day; `FASKES_REFRESH=1` forces a refetch.
+The payload's `source` string repeats the caveat the sidebar note also carries:
+completeness is OSM's, so a facility missing from this layer is *unmapped*, not
+non-existent.
+
+## Flood reports (PetaBencana.id)
+
+`scripts/build-flood.py` -> `src/flood.js`. A different kind of layer: real
+flood reports for Kota Depok from [PetaBencana.id](https://petabencana.id), the
+crowdsourced hazard platform run by the MIT Urban Risk Lab / Yayasan Peta
+Bencana. Each pin is a report location carrying the original report text, the
+date and — when the reporter gave one — the depth. Pins say "this was reported
+here", not "we measured this", and the card repeats that.
+
+**The screening is the build.** Depok's feed is dominated by training material:
+GRASP/BNPB simulation rounds (`#TES_Trainer ...`, "Latihan simulasi ..."), HKB
+disaster days, campus classes (`UI_...`, `DUTA ...`) and the occasional joke
+post. The archive endpoint carries no `is_training` flag, so every
+Depok-tagged flood report — 217 of them, Apr 2023 – May 2026 — was screened by
+hand and logged in `scripts/data/flood-history.json`: `review="keep"` for 8
+real street-level reports, `review="drop"` with a per-record note for the other
+209. The reason for each drop is a line of text, not a flag, because "why was
+this excluded" is the question a reader will ask, and "it was a training post"
+is an answer. Reports within 150m of each other share a pin. Nothing reaches
+the map without a `keep`.
+
+Coverage was verified by a full archive scan 2020-10-01 → 2026-10-17 (the
+archive is Jakarta-only before ~2021 and holds no Depok flood report before Apr
+2023). The default rebuild is offline and byte-reproducible from the checked-in
+history; the opt-in fetch merges new reports as `review="pending"`, which the
+build prints until a human classifies them:
+
+```bash
+python3 scripts/build-flood.py                  # offline, from the history file
+FLOOD_FETCH=1 python3 scripts/build-flood.py    # + fetch new windows/live first
+```
+
+The archive API answers in ≤~217-day windows and the live endpoint in ≤7-day
+windows, both behind a browser User-Agent; the scan and its retry ladder are
+documented in the script. Licence: public data PetaBencana.id (MIT Urban Risk
+Lab / Yayasan Peta Bencana), attributed in the footer.
 
 ## Regenerating the boundary data
 
@@ -264,7 +379,9 @@ would otherwise produce invalid features and break `fitBounds`. Those rows get a
 python3 scripts/build-data.py       # 63 kelurahan  -> public/data/
 python3 scripts/build-districts.py  # 11 kecamatan  -> public/data/
 python3 scripts/bundle-data.py      # both          -> src/data.js
-python3 scripts/build-roads.py      # 77 ruas      -> src/roads.js  (Overpass)
+python3 scripts/build-roads.py      # 77 ruas       -> src/roads.js  (Overpass)
+python3 scripts/build-faskes.py     # 82 faskes     -> src/faskes.js (Overpass)
+python3 scripts/build-flood.py      # 8 laporan     -> src/flood.js  (offline)
 ```
 
 The first three pull from

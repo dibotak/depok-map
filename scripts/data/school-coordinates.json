@@ -1,0 +1,131 @@
+{
+ "_comment": "Koordinat riset manual (17 Okt 2026) untuk sekolah yang alamatnya di portal Kemendikdasmen Sekolah Kita terbit tanpa koordinat yang bisa dipakai. Setiap titik ditemukan lewat halaman/pin Google Maps yang bisa diverifikasi (nama + alamat + plus code cocok), tautan peta di situs resmi sekolah, atau koordinat resmi Dapodik untuk kompleks yang sama. Tidak ada titik yang ditebak: sekolah yang gedungnya belum berdiri (SMKN 5) sengaja dibiarkan tanpa pin. Dipakai oleh scripts/build-schools-sekolahkita.py saat membangun src/schools.js; jangan sunting src/schools.js langsung.",
+ "researched": "2026-10-17",
+ "schools": {
+  "70059014": {
+   "name": "MA AL AMANAH",
+   "lat": -6.4168719,
+   "lon": 106.7717531,
+   "pin_src": "gmaps",
+   "source": "Google Maps plus code melalui r.jina.ai"
+  },
+  "70029292": {
+   "name": "MA ASSALAMAH",
+   "lat": -6.4296363,
+   "lon": 106.8037072,
+   "pin_src": "gmaps",
+   "source": "Pin Google Maps 'Pondok Pesantren Assalamah Depok'"
+  },
+  "70039303": {
+   "name": "MA BINA MULIA",
+   "lat": -6.4263692,
+   "lon": 106.7848697,
+   "pin_src": "gmaps",
+   "source": "Pin Google Maps 'MAU Bina Mulia'"
+  },
+  "70059661": {
+   "name": "MA KHOIRUR ROOZIQIIN",
+   "lat": -6.3822469,
+   "lon": 106.8185031,
+   "pin_src": "gmaps",
+   "source": "Google Maps plus code melalui r.jina.ai"
+  },
+  "69983496": {
+   "name": "MAS DARUTTAFSIR AL-HUSAINI",
+   "lat": -6.4139969,
+   "lon": 106.7356281,
+   "pin_src": "gmaps",
+   "source": "Pin 'Pondok Pesantren Darut Tafsir Al Husaini'"
+  },
+  "69955724": {
+   "name": "MAS Said Yusuf",
+   "lat": -6.3912469,
+   "lon": 106.7781281,
+   "pin_src": "gmaps",
+   "source": "Pin 'Pondok Pesantren Sa'id Yusuf'"
+  },
+  "69983497": {
+   "name": "MAS ULUMUL QUR'AN",
+   "lat": -6.4107891,
+   "lon": 106.7441539,
+   "pin_src": "gmaps",
+   "source": "Pin 'Pondok Pesantren Ulumul Qur'an'"
+  },
+  "70008514": {
+   "name": "MAS WAHID HASYIM",
+   "lat": -6.4281986,
+   "lon": 106.8056509,
+   "pin_src": "gmaps",
+   "source": "Alamat identik: BLK Komunitas Wahid Hasyim, Jl. Raya Rawa Indah No.115 RT.03/RW.02"
+  },
+  "70051238": {
+   "name": "SMA CITRA NEGARA",
+   "lat": -6.3803116,
+   "lon": 106.8097872,
+   "pin_src": "gmaps",
+   "source": "Pin Google Maps 'SMA CITRA NEGARA', Jl. Kemiri Jaya II No.99"
+  },
+  "70063499": {
+   "name": "SMA Holy Faithful Obedient",
+   "lat": -6.3982469,
+   "lon": 106.8247531,
+   "pin_src": "gmaps",
+   "source": "Pin 'Holy Faithful Obedient School'"
+  },
+  "70041118": {
+   "name": "SMA ISLAM BUDAYA",
+   "lat": -6.4254783,
+   "lon": 106.7768067,
+   "pin_src": "dapodik",
+   "source": "Koordinat Dapodik SMP Islam Budaya (kompleks sama, Jl. Mangga III RT01/03 Pasir Putih); pin Google 'Asrama Pesantren Budaya Indonesia' (-6.4255747,106.7766149) berjarak ~30 m"
+  },
+  "70046908": {
+   "name": "SMA ISLAM DAARUL ILMI DEPOK",
+   "lat": -6.4109969,
+   "lon": 106.8271281,
+   "pin_src": "gmaps",
+   "source": "Pin 'Sekolah Islam Daarul Ilmi Depok'"
+  },
+  "70050629": {
+   "name": "SMA ISLAM FITRAH AL FIKRI",
+   "lat": -6.4123627,
+   "lon": 106.8392238,
+   "pin_src": "gmaps",
+   "source": "Pin 'SMA Islam Fitrah Al Fikri'"
+  },
+  "70052137": {
+   "name": "SMA IT AL-HIKMAH",
+   "lat": -6.4299094,
+   "lon": 106.7960625,
+   "pin_src": "gmaps",
+   "source": "Pin 'SMAIT AL-HIKMAH CIPAYUNG DEPOK'"
+  },
+  "70060413": {
+   "name": "SMA Nurul Ikhlas",
+   "lat": -6.4085918,
+   "lon": 106.9021963,
+   "pin_src": "situs",
+   "source": "Tautan peta situs resmi (maps.app.goo.gl/UWbBnZdLTYo9YLeb9) → 'PONPES TAHFIDZUL QUR'AN NURUL IKHLAS', Leuwinanggung 16456"
+  },
+  "70044933": {
+   "name": "SMA PESANTREN CENDEKIA AMANAH",
+   "lat": -6.4368719,
+   "lon": 106.8213781,
+   "pin_src": "gmaps",
+   "source": "Pin 'Pesantren Cendekia Amanah', Jl. Raya Kalimulya No.86B"
+  },
+  "70064533": {
+   "name": "SEKOLAH MENENGAH KEJURUAN NEGERI 5 KOTA DEPOK",
+   "lat": null,
+   "lon": null,
+   "source": "Tidak dipasang: gedung belum dibangun (lahan fasos/fasum Perumahan Cinere Residence RW 05, Kel. Meruyung; KBM sementara menumpang SMAN 6/SMKN 2). Tidak ada pin yang sah — sesuai kebijakan 'jangan menebak koordinat'."
+  },
+  "70035428": {
+   "name": "SMK SCIENCE TECHNOLOGY AND BUSINESS",
+   "lat": -6.4193719,
+   "lon": 106.7517531,
+   "pin_src": "gmaps",
+   "source": "Pin 'SMK Science Technology and Business (SMK STB)', Jl. Wadas, Pengasinan"
+  }
+ }
+}

@@ -73,6 +73,11 @@ const PALETTE = {
     // Puskesmas are rose: a fifth family, so a health pin can never be read as
     // a school (teal), route (violet), road (orange) or kecamatan (green).
     puskes: '#b91c1c',
+    // Faskes (the OSM complement to the Dinkes register) are lime, and flood
+    // reports blue: two more families again, so a faskes pin and a flood pin
+    // never read as a school, a puskesmas, or anything else.
+    faskes: '#4d7c0f',
+    flood: '#1d4ed8',
   },
   dark: {
     sel: '#6fd39b', selFill: '#6fd39b', peer: '#3f7f5c', peerFill: '#38745a',
@@ -81,6 +86,8 @@ const PALETTE = {
     trans: '#a78bfa',
     school: '#2dd4bf',
     puskes: '#fb7185',
+    faskes: '#a3e635',
+    flood: '#60a5fa',
   },
 };
 
@@ -115,6 +122,10 @@ const SRC_SCHOOL = 'sekolah-terpilih';
 const SRC_SCHOOL_ALL = 'sekolah-semua';
 const SRC_PUSKES = 'puskes-terpilih';
 const SRC_PUSKES_ALL = 'puskes-semua';
+const SRC_FASKES = 'faskes-terpilih';
+const SRC_FASKES_ALL = 'faskes-semua';
+const SRC_FLOOD = 'banjir-terpilih';
+const SRC_FLOOD_ALL = 'banjir-semua';
 let mapReady = false;
 
 /**
@@ -202,6 +213,18 @@ function paint() {
     ['puskes-sel', 'circle-stroke-color', p.halo],
     ['puskes-sel-label', 'text-color', p.puskes],
     ['puskes-sel-label', 'text-halo-color', p.halo],
+    ['faskes-all', 'circle-color', p.faskes],
+    ['faskes-all', 'circle-stroke-color', p.halo],
+    ['faskes-sel', 'circle-color', p.faskes],
+    ['faskes-sel', 'circle-stroke-color', p.halo],
+    ['faskes-sel-label', 'text-color', p.faskes],
+    ['faskes-sel-label', 'text-halo-color', p.halo],
+    ['flood-all', 'circle-color', p.flood],
+    ['flood-all', 'circle-stroke-color', p.halo],
+    ['flood-sel', 'circle-color', p.flood],
+    ['flood-sel', 'circle-stroke-color', p.halo],
+    ['flood-sel-label', 'text-color', p.flood],
+    ['flood-sel-label', 'text-halo-color', p.halo],
   ]) {
     if (map.getLayer(id)) map.setPaintProperty(id, prop, val);
   }
@@ -505,6 +528,107 @@ function addLayers() {
       },
     });
   }
+  // Faskes (OSM), the complement to the Dinkes puskesmas register. Same shape
+  // as the puskesmas layers, in lime so the two health layers stay apart.
+  for (const id of [SRC_FASKES_ALL, SRC_FASKES]) {
+    if (!map.getSource(id)) {
+      map.addSource(id, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    }
+  }
+  if (!map.getLayer('faskes-all')) {
+    map.addLayer({
+      id: 'faskes-all', type: 'circle', source: SRC_FASKES_ALL,
+      paint: {
+        'circle-radius': ['interpolate', ['linear'], ['zoom'],
+          11, 3, 13, 4.5, 16, 7],
+        'circle-color': PALETTE[state.theme].faskes,
+        'circle-opacity': 0.62,
+        'circle-stroke-width': 1,
+        'circle-stroke-color': PALETTE[state.theme].halo,
+        'circle-stroke-opacity': 0.5,
+      },
+    });
+  }
+  if (!map.getLayer('faskes-sel')) {
+    map.addLayer({
+      id: 'faskes-sel', type: 'circle', source: SRC_FASKES,
+      paint: {
+        'circle-radius': ['interpolate', ['linear'], ['zoom'],
+          11, 5, 13, 8, 16, 12],
+        'circle-color': PALETTE[state.theme].faskes,
+        'circle-stroke-width': 2.5,
+        'circle-stroke-color': PALETTE[state.theme].halo,
+      },
+    });
+    map.addLayer({
+      id: 'faskes-sel-label', type: 'symbol', source: SRC_FASKES,
+      layout: {
+        'text-field': ['get', 'name'],
+        'text-size': 12,
+        'text-font': ['Noto Sans Regular'],
+        'text-anchor': 'top',
+        'text-offset': [0, 1.1],
+        'text-max-width': 14,
+        'text-allow-overlap': false,
+      },
+      paint: {
+        'text-color': PALETTE[state.theme].faskes,
+        'text-halo-color': PALETTE[state.theme].halo,
+        'text-halo-width': 2,
+      },
+    });
+  }
+  // Flood reports (PetaBencana.id). Blue -- the last family on the map. These
+  // are curated report locations, not sensor readings, so the layers carry the
+  // same two-source shape as everything else.
+  for (const id of [SRC_FLOOD_ALL, SRC_FLOOD]) {
+    if (!map.getSource(id)) {
+      map.addSource(id, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    }
+  }
+  if (!map.getLayer('flood-all')) {
+    map.addLayer({
+      id: 'flood-all', type: 'circle', source: SRC_FLOOD_ALL,
+      paint: {
+        'circle-radius': ['interpolate', ['linear'], ['zoom'],
+          11, 3, 13, 4.5, 16, 7],
+        'circle-color': PALETTE[state.theme].flood,
+        'circle-opacity': 0.62,
+        'circle-stroke-width': 1,
+        'circle-stroke-color': PALETTE[state.theme].halo,
+        'circle-stroke-opacity': 0.5,
+      },
+    });
+  }
+  if (!map.getLayer('flood-sel')) {
+    map.addLayer({
+      id: 'flood-sel', type: 'circle', source: SRC_FLOOD,
+      paint: {
+        'circle-radius': ['interpolate', ['linear'], ['zoom'],
+          11, 5, 13, 8, 16, 12],
+        'circle-color': PALETTE[state.theme].flood,
+        'circle-stroke-width': 2.5,
+        'circle-stroke-color': PALETTE[state.theme].halo,
+      },
+    });
+    map.addLayer({
+      id: 'flood-sel-label', type: 'symbol', source: SRC_FLOOD,
+      layout: {
+        'text-field': ['get', 'label'],
+        'text-size': 12,
+        'text-font': ['Noto Sans Regular'],
+        'text-anchor': 'top',
+        'text-offset': [0, 1.1],
+        'text-max-width': 14,
+        'text-allow-overlap': false,
+      },
+      paint: {
+        'text-color': PALETTE[state.theme].flood,
+        'text-halo-color': PALETTE[state.theme].halo,
+        'text-halo-width': 2,
+      },
+    });
+  }
   if (!map.getLayer('trans-sel')) {
     map.addLayer({
       id: 'trans-sel-halo', type: 'line', source: SRC_TRANS,
@@ -713,18 +837,34 @@ function selectVillage(code, opts = {}) {
 // #card back -- selectDistrict() and selectVillage() did not, so picking a
 // school and then a kecamatan left the slot empty with nothing showing.
 function clearSubCards() {
-  renderRouteCard(null);
-  renderSchoolCard(null);
-  renderPuskesCard(null);
+  hideDetailCards();
   selectedRoute = null;
   selectedSchool = null;
+  selectedPuskes = null;
+  selectedFaskes = null;
+  selectedFlood = null;
   // Drop the markers too, or a stale pin stays on the map with no card for it.
   const rt = map.getSource(SRC_TRANS), sr = map.getSource(SRC_SCHOOL);
   const pr = map.getSource(SRC_PUSKES);
+  const fr = map.getSource(SRC_FASKES), fl = map.getSource(SRC_FLOOD);
   if (rt) rt.setData({ type: 'FeatureCollection', features: [] });
   if (sr) sr.setData({ type: 'FeatureCollection', features: [] });
   if (pr) pr.setData({ type: 'FeatureCollection', features: [] });
+  if (fr) fr.setData({ type: 'FeatureCollection', features: [] });
+  if (fl) fl.setData({ type: 'FeatureCollection', features: [] });
   card.hidden = false;
+}
+
+/** One detail slot, five possible cards. Opening any of them hides the other
+ *  four first, or two .cards would paint on top of each other in the same
+ *  fixed slot. The deselect paths inside each highlight*() still call their
+ *  own render*Card(null) directly. */
+function hideDetailCards() {
+  renderRouteCard(null);
+  renderSchoolCard(null);
+  renderPuskesCard(null);
+  renderFaskesCard(null);
+  renderFloodCard(null);
 }
 
 function selectDistrict(name, opts = {}) {
@@ -1225,6 +1365,37 @@ function restoreLayers() {
         src.setData({ type: 'FeatureCollection', features: feats });
       }
     }
+    // Same again for the health and flood layers: their selected pins and
+    // show-all overlays are dropped by setStyle() too.
+    if (selectedFaskes) {
+      const fk = FASKES.list.find(x => x.key === selectedFaskes);
+      if (fk && hasFaskesPin(fk)) {
+        map.getSource(SRC_FASKES).setData(
+          { type: 'FeatureCollection', features: [faskesFeature(fk)] });
+      }
+    }
+    if (showAllFaskes) {
+      const fs = map.getSource(SRC_FASKES_ALL);
+      if (fs) {
+        fs.setData({
+          type: 'FeatureCollection',
+          features: FASKES.list.filter(hasFaskesPin).map(faskesFeature),
+        });
+      }
+    }
+    if (selectedFlood) {
+      const fl = FLOOD.list.find(x => x.key === selectedFlood);
+      if (fl) {
+        map.getSource(SRC_FLOOD).setData(
+          { type: 'FeatureCollection', features: [floodFeature(fl)] });
+      }
+    }
+    if (showAllFlood) {
+      const fs = map.getSource(SRC_FLOOD_ALL);
+      if (fs) {
+        fs.setData({ type: 'FeatureCollection', features: FLOOD.list.map(floodFeature) });
+      }
+    }
     stop();
   };
 
@@ -1507,6 +1678,8 @@ const TABS = [
   { id: 'transport', tab: 'tab-transport', panel: 'panel-transport' },
   { id: 'school', tab: 'tab-school', panel: 'panel-school' },
   { id: 'puskes', tab: 'tab-puskes', panel: 'panel-puskes' },
+  { id: 'faskes', tab: 'tab-faskes', panel: 'panel-faskes' },
+  { id: 'flood', tab: 'tab-flood', panel: 'panel-flood' },
 ];
 
 function setTab(which) {
@@ -1835,6 +2008,7 @@ function highlightRoute(key) {
   transportCardName.textContent = routeName(route);
   transportCard.style.setProperty('--road-c', PALETTE[state.theme].trans);
   transportCard.hidden = true;
+  hideDetailCards();
   renderRouteCard(route);
   // The area card and the route card are both .card and would stack on top of
   // each other, so the area one steps aside for as long as a route is chosen.
@@ -2172,7 +2346,18 @@ function renderSchoolCard(s) {
   if (s.postcode) facts.push(['Kode pos', `<span class="code">${esc(s.postcode)}</span>`]);
   if (hasPoint(s)) {
     facts.push(['Koordinat', `${s.lat.toFixed(5)}, ${s.lon.toFixed(5)}`]);
-    facts.push(['Titik', `Kemendikdasmen <span class="code">${esc(s.school_id || s.key || '').slice(0, 8)}</span>`]);
+    // Portal pins identify themselves by the ministry record. The handful of
+    // schools the portal published without a point were located by hand (see
+    // scripts/data/school-coordinates.json), and the card names that source
+    // instead of pretending the point came from the register.
+    const pinSrc = s.pin_src === 'gmaps'
+      ? `Google Maps <span class="muted">(pin riset)</span>`
+      : s.pin_src === 'situs'
+        ? `Situs resmi sekolah <span class="muted">(tautan peta)</span>`
+        : s.pin_src === 'dapodik'
+          ? `Dapodik Kemendikdasmen <span class="muted">(kompleks sama)</span>`
+          : `Kemendikdasmen <span class="code">${esc(s.school_id || s.key || '').slice(0, 8)}</span>`;
+    facts.push(['Titik', pinSrc]);
   } else {
     // Say why there is no pin. A marker missing with no explanation reads as a
     // bug; this is a gap in the ministry's data and the school is still real,
@@ -2223,7 +2408,7 @@ function highlightSchool(key) {
   }
   // Same stand-aside as a route: two .cards in one slot overlap.
   card.hidden = true;
-  renderRouteCard(null);
+  hideDetailCards();
   renderSchoolCard(s);
   renderSchools();
   relayoutOverlays();
@@ -2289,7 +2474,7 @@ function renderSchools(query) {
                 data-skey="${esc(s.key)}">
           <span class="rr-badge">${esc(s.label.replace(/ (Negeri|Swasta)$/, ''))}</span>
           <span class="rr-name">${esc(s.name)}</span>
-          ${hasPoint(s) ? '' : '<span class="rr-nopt" title="belum ada titik di OpenStreetMap">no pin</span>'}
+          ${hasPoint(s) ? '' : '<span class="rr-nopt" title="belum ada titik yang sah di sumber">no pin</span>'}
         </button>`).join('')}
       </div></div>`;
   }).join('');
@@ -2500,8 +2685,7 @@ function highlightPuskes(key) {
   }
   // Same stand-aside as a route or school: two .cards in one slot overlap.
   card.hidden = true;
-  renderRouteCard(null);
-  renderSchoolCard(null);
+  hideDetailCards();
   renderPuskesCard(p);
   renderPuskesmas();
   relayoutOverlays();
@@ -2622,6 +2806,470 @@ if (puskesSearch) {
     if (first) first.click();
   });
 }
+
+/* ---------- faskes (OSM health facilities) ---------- */
+/* The complement to the Dinkes register above: hospitals, clinics, pharmacies
+   and dentists' practices as mapped in OpenStreetMap. Same three pieces as the
+   puskesmas section -- list grouped by kecamatan, selected pin with a card,
+   show-all overlay. The one difference the note has to own: this is OSM
+   coverage, not an official register, so a facility missing here means "not
+   mapped yet", not "does not exist". */
+
+const FASKES = window.DEPOK_FASKES || { source: '', counts: {}, list: [] };
+const faskesAllBox = document.getElementById('faskes-all');
+const faskesNote = document.getElementById('faskes-note');
+const faskesGroups = document.getElementById('faskes-groups');
+const faskesSearch = document.getElementById('faskes-search');
+const faskesEmpty = document.getElementById('faskes-empty');
+const fkDetail = document.getElementById('faskes-detail');
+const fkEyebrow = document.getElementById('fk-eyebrow');
+const fkName = document.getElementById('fk-name');
+const fkLadder = document.getElementById('fk-ladder');
+const fkFacts = document.getElementById('fk-facts');
+const fkSource = document.getElementById('fk-source');
+const fkMin = document.getElementById('fk-min');
+let selectedFaskes = null;
+let showAllFaskes = false;
+
+// Kinds arrive in full ("Rumah sakit"); rows need a badge that fits.
+const FASKES_BADGE = {
+  'Rumah sakit': 'RS', 'Klinik': 'Klinik', 'Apotek': 'Apotek', 'Dokter gigi': 'Gigi',
+};
+
+function hasFaskesPin(f) {
+  return f.lon != null && f.lat != null && Number.isFinite(f.lon) && Number.isFinite(f.lat);
+}
+
+function faskesFeature(f) {
+  return {
+    type: 'Feature',
+    geometry: { type: 'Point', coordinates: [f.lon, f.lat] },
+    properties: { name: f.name, key: f.key },
+  };
+}
+
+function renderFaskesCard(f) {
+  if (!f) { fkDetail.hidden = true; return; }
+  fkDetail.hidden = false;
+  fkEyebrow.textContent = f.kind || 'Fasilitas kesehatan';
+  fkName.textContent = f.name;
+
+  // Ladder: village -> district -> city, the same hierarchy as the other cards.
+  fkLadder.innerHTML = '';
+  for (const [lvl, val] of [['Kelurahan', f.village], ['Kecamatan', f.district], ['Kota', 'Depok']]) {
+    if (!val) continue;
+    const row = document.createElement('div');
+    row.className = 'rung';
+    row.innerHTML = '<i class="dot"></i><span class="lvl"></span><span class="nm leg"></span>';
+    row.querySelector('.lvl').textContent = lvl;
+    row.querySelector('.nm').textContent = val;
+    fkLadder.append(row);
+  }
+
+  // Facts, every field optional: an OSM pharmacy is often just a name and a
+  // node id, and the card has to stay readable with that.
+  const facts = [];
+  if (f.operator) facts.push(['Pengelola', esc(f.operator)]);
+  if (f.address) facts.push(['Alamat', esc(f.address)]);
+  if (f.phone) facts.push(['Telp', `<span class="code">${esc(f.phone)}</span>`]);
+  if (f.opening_hours) facts.push(['Jam buka', esc(f.opening_hours)]);
+  if (f.website) facts.push(['Web', esc(f.website)]);
+  if (hasFaskesPin(f)) {
+    facts.push(['Koordinat', `${f.lat.toFixed(5)}, ${f.lon.toFixed(5)}`]);
+    facts.push(['Titik', `OpenStreetMap <span class="code">${esc(f.osm)}</span>`]);
+  }
+  fkFacts.className = 'kids trans-facts';
+  fkFacts.innerHTML = facts
+    .map(([k, v]) => `<div class="trans-fact"><dt>${k}</dt><dd>${v}</dd></div>`).join('');
+
+  fkSource.textContent = FASKES.source || '';
+  const expanded = !document.body.classList.contains('card-collapsed');
+  fkMin.setAttribute('aria-label', expanded ? 'Perkecil info' : 'Perluas info');
+  fkMin.title = expanded ? 'Perkecil info' : 'Perluas info';
+}
+
+fkMin.addEventListener('click', () => {
+  document.body.classList.toggle('card-collapsed');
+  relayoutOverlays();
+});
+
+/** Draw the selected faskes, zoom to it, and show its card. */
+function highlightFaskes(key) {
+  selectedFaskes = key;
+  if (!map.getSource(SRC_FASKES)) return;
+  const f = FASKES.list.find(x => x.key === key);
+  const src = map.getSource(SRC_FASKES);
+  if (!f) {
+    src.setData({ type: 'FeatureCollection', features: [] });
+    renderFaskesCard(null);
+    // Hand the screen back to the area card, the same way the other menus do.
+    card.hidden = false;
+    renderCard();
+    renderFaskes();
+    relayoutOverlays();
+    return;
+  }
+  if (hasFaskesPin(f)) {
+    src.setData({ type: 'FeatureCollection', features: [faskesFeature(f)] });
+    map.flyTo({ center: [f.lon, f.lat], zoom: Math.max(map.getZoom(), 15), duration: 700 });
+  } else {
+    src.setData({ type: 'FeatureCollection', features: [] });
+  }
+  // Same stand-aside as the other detail cards: one slot, one card.
+  card.hidden = true;
+  hideDetailCards();
+  renderFaskesCard(f);
+  renderFaskes();
+  relayoutOverlays();
+}
+
+/** Show every pinned faskes at once. Points, so this is cheap -- no fitBounds
+ *  guard beyond the obvious one, unlike the route overlay. */
+function toggleAllFaskes(on) {
+  showAllFaskes = !!on;
+  if (!map.getSource(SRC_FASKES_ALL)) return;
+  const src = map.getSource(SRC_FASKES_ALL);
+  if (!showAllFaskes) {
+    src.setData({ type: 'FeatureCollection', features: [] });
+    return;
+  }
+  const placed = FASKES.list.filter(hasFaskesPin);
+  src.setData({ type: 'FeatureCollection', features: placed.map(faskesFeature) });
+  const lons = placed.map(f => f.lon), lats = placed.map(f => f.lat);
+  if (lons.length) {
+    map.fitBounds([[Math.min(...lons), Math.min(...lats)],
+      [Math.max(...lons), Math.max(...lats)]], {
+      padding: { top: 110, bottom: 220, left: 70, right: 70 },
+      maxZoom: 13, duration: 700,
+    });
+  }
+}
+faskesAllBox.addEventListener('change', () => toggleAllFaskes(faskesAllBox.checked));
+
+function renderFaskes(query) {
+  if (!faskesGroups) return;
+  // 82 rows sorted by kecamatan; the search box matches name, kind, village
+  // and district, since a health lookup is as often "apotek near Sawangan" as
+  // it is a name.
+  const q = (query == null ? (faskesSearch ? faskesSearch.value : '') : query)
+    .trim().toLowerCase();
+  const byDistrict = new Map();
+  let shown = 0;
+  for (const f of FASKES.list) {
+    if (q && !(f.name.toLowerCase().includes(q)
+      || (f.kind || '').toLowerCase().includes(q)
+      || (f.village || '').toLowerCase().includes(q)
+      || (f.district || '').toLowerCase().includes(q))) continue;
+    shown++;
+    if (!byDistrict.has(f.district)) byDistrict.set(f.district, []);
+    byDistrict.get(f.district).push(f);
+  }
+  const districts = Array.from(byDistrict.entries())
+    .sort((a, b) => String(a[0] || 'kecamatan tidak tercatat')
+      .localeCompare(String(b[0] || 'kecamatan tidak tercatat'), 'id'));
+
+  faskesGroups.innerHTML = districts.map(([d, list]) => {
+    const label = d || 'kecamatan tidak tercatat';
+    list.sort((a, b) => a.name.localeCompare(b.name, 'id'));
+    return `<div class="tg" data-open="1">
+      <button class="tg-head" type="button" aria-expanded="true">
+        <svg class="tg-chev" width="11" height="11" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="3" stroke-linecap="round"
+             stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+        <span class="tg-t">Kecamatan ${esc(label)}</span><span class="tg-n">${list.length}</span>
+      </button>
+      <div class="tg-body">${list.map(f => `
+        <button class="road-row${f.key === selectedFaskes ? ' is-sel' : ''}" type="button"
+                data-fkey="${esc(f.key)}">
+          <span class="rr-badge">${esc(FASKES_BADGE[f.kind] || f.kind)}</span>
+          <span class="rr-name">${esc(f.name)}</span>
+        </button>`).join('')}
+      </div></div>`;
+  }).join('');
+
+  // A wrong query can legitimately match nothing; say so.
+  if (faskesEmpty) faskesEmpty.hidden = shown > 0;
+
+  // Provenance, with the numbers that matter: this list is OSM coverage, not a
+  // register, and the note says what that means for a name you cannot find.
+  const n = FASKES.list.length;
+  const byKind = (FASKES.counts && FASKES.counts.by_kind) || {};
+  const kinds = Object.entries(byKind)
+    .sort((a, b) => b[1] - a[1])
+    .map(([k, v]) => `<b>${v}</b> ${esc(k.toLowerCase())}`).join(' · ');
+  faskesNote.innerHTML = `<b>${n}</b> fasilitas kesehatan dari OpenStreetMap `
+    + `(lisensi ODbL) — pelengkap daftar puskesmas di atas: ${kinds}. `
+    + `Kelengkapan mengikuti pemetaan OSM, jadi tidak adanya sebuah faskes di sini `
+    + `berarti belum terpetakan, bukan berarti tidak ada. `
+    + `Cari nama, jenis, kelurahan atau kecamatan.`;
+}
+
+if (faskesGroups) {
+  faskesGroups.addEventListener('click', e => {
+    const head = e.target.closest('.tg-head');
+    if (head) {
+      const g = head.closest('.tg');
+      g.dataset.open = g.dataset.open === '1' ? '0' : '1';
+      return;
+    }
+    const row = e.target.closest('[data-fkey]');
+    if (!row) return;
+    const key = row.dataset.fkey;
+    if (key === selectedFaskes) {
+      highlightFaskes(null);          // tapping the selection clears it
+    } else {
+      highlightFaskes(key);
+    }
+    if (window.matchMedia('(max-width: 760px)').matches) setSidebar(false);
+  });
+}
+
+if (faskesSearch) {
+  faskesSearch.addEventListener('input', () => renderFaskes(faskesSearch.value));
+  faskesSearch.addEventListener('keydown', e => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const first = faskesGroups.querySelector('[data-fkey]');
+    if (first) first.click();
+  });
+}
+
+/* ---------- flood reports (PetaBencana.id) ---------- */
+/* A different kind of layer: an inventory of real flood reports rather than of
+   places. One pin per report location -- reports within 150 m of each other
+   share a pin -- carrying the original text, date and reported depth. The
+   payload is already curated: 209 of the 217 Depok-tagged flood records in the
+   platform's archive were simulation/practice posts and were screened out
+   (the full log lives in scripts/data/flood-history.json). The note says so,
+   because "8 pins" without that context reads as "Depok almost never floods",
+   and the card repeats the stand-aside: a pin is a report location, not a
+   measurement. */
+
+const FLOOD = window.DEPOK_FLOOD
+  || { source: '', list: [], scanned: {}, screening: {}, counts: {} };
+const floodAllBox = document.getElementById('flood-all');
+const floodNote = document.getElementById('flood-note');
+const floodGroups = document.getElementById('flood-groups');
+const floodSearch = document.getElementById('flood-search');
+const floodEmpty = document.getElementById('flood-empty');
+const flDetail = document.getElementById('flood-detail');
+const flEyebrow = document.getElementById('fl-eyebrow');
+const flName = document.getElementById('fl-name');
+const flLadder = document.getElementById('fl-ladder');
+const flFacts = document.getElementById('fl-facts');
+const flSource = document.getElementById('fl-source');
+const flMin = document.getElementById('fl-min');
+let selectedFlood = null;
+let showAllFlood = false;
+
+const ID_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun',
+  'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+
+/** "2026-04-30" -> "30 Apr 2026". Dates leave the build script as ISO; the
+ *  sidebar reads Indonesian. */
+function idDate(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || '');
+  return m ? `${+m[3]} ${ID_MONTHS[+m[2] - 1]} ${m[1]}` : (iso || '');
+}
+
+function floodFeature(p) {
+  const place = p.village || p.district || 'Kota Depok';
+  return {
+    type: 'Feature',
+    geometry: { type: 'Point', coordinates: [p.lon, p.lat] },
+    properties: { name: place, label: 'Banjir · ' + place, key: p.key },
+  };
+}
+
+function renderFloodCard(p) {
+  if (!p) { flDetail.hidden = true; return; }
+  flDetail.hidden = false;
+  flEyebrow.textContent = p.count > 1
+    ? `Laporan banjir · ${p.count} laporan warga`
+    : 'Laporan banjir warga';
+  flName.textContent = p.village || p.district || 'Kota Depok';
+
+  flLadder.innerHTML = '';
+  for (const [lvl, val] of [['Kelurahan', p.village], ['Kecamatan', p.district], ['Kota', 'Depok']]) {
+    if (!val) continue;
+    const row = document.createElement('div');
+    row.className = 'rung';
+    row.innerHTML = '<i class="dot"></i><span class="lvl"></span><span class="nm leg"></span>';
+    row.querySelector('.lvl').textContent = lvl;
+    row.querySelector('.nm').textContent = val;
+    flLadder.append(row);
+  }
+
+  // The card is a mini event log: one fact row per report, original text
+  // included, and the depth chip only when the reporter gave one.
+  const facts = [];
+  facts.push(['Terakhir', idDate(p.last_date)
+    + (p.last_depth_cm != null ? ` · ${p.last_depth_cm} cm` : '')]);
+  if (p.max_depth_cm != null && p.max_depth_cm !== p.last_depth_cm) {
+    facts.push(['Kedalaman maks', `${p.max_depth_cm} cm <span class="muted">(klaim pelapor)</span>`]);
+  }
+  for (const r of p.reports || []) {
+    facts.push([idDate(r.date),
+      esc(r.text) + (r.depth_cm != null ? ` <span class="code">${r.depth_cm} cm</span>` : '')]);
+  }
+  facts.push(['Catatan', '<span class="muted">Titik = lokasi laporan publik, bukan '
+    + 'verifikasi lapangan. Laporan simulasi/pelatihan disaring.</span>']);
+  flFacts.className = 'kids trans-facts';
+  flFacts.innerHTML = facts
+    .map(([k, v]) => `<div class="trans-fact"><dt>${k}</dt><dd>${v}</dd></div>`).join('');
+
+  flSource.textContent = FLOOD.source || '';
+  const expanded = !document.body.classList.contains('card-collapsed');
+  flMin.setAttribute('aria-label', expanded ? 'Perkecil info' : 'Perluas info');
+  flMin.title = expanded ? 'Perkecil info' : 'Perluas info';
+}
+
+flMin.addEventListener('click', () => {
+  document.body.classList.toggle('card-collapsed');
+  relayoutOverlays();
+});
+
+/** Draw the selected flood pin, zoom to it, and show its card. */
+function highlightFlood(key) {
+  selectedFlood = key;
+  if (!map.getSource(SRC_FLOOD)) return;
+  const p = FLOOD.list.find(x => x.key === key);
+  const src = map.getSource(SRC_FLOOD);
+  if (!p) {
+    src.setData({ type: 'FeatureCollection', features: [] });
+    renderFloodCard(null);
+    // Hand the screen back to the area card, the same way the other menus do.
+    card.hidden = false;
+    renderCard();
+    renderFlood();
+    relayoutOverlays();
+    return;
+  }
+  src.setData({ type: 'FeatureCollection', features: [floodFeature(p)] });
+  map.flyTo({ center: [p.lon, p.lat], zoom: Math.max(map.getZoom(), 15), duration: 700 });
+  // Same stand-aside as the other detail cards: one slot, one card.
+  card.hidden = true;
+  hideDetailCards();
+  renderFloodCard(p);
+  renderFlood();
+  relayoutOverlays();
+}
+
+/** Show every flood pin at once. Eight pins today, but the overlay is the
+ *  same three-piece shape as the other layers so it keeps working when the
+ *  archive adds more. */
+function toggleAllFlood(on) {
+  showAllFlood = !!on;
+  if (!map.getSource(SRC_FLOOD_ALL)) return;
+  const src = map.getSource(SRC_FLOOD_ALL);
+  if (!showAllFlood) {
+    src.setData({ type: 'FeatureCollection', features: [] });
+    return;
+  }
+  src.setData({ type: 'FeatureCollection', features: FLOOD.list.map(floodFeature) });
+  const lons = FLOOD.list.map(p => p.lon), lats = FLOOD.list.map(p => p.lat);
+  if (lons.length) {
+    map.fitBounds([[Math.min(...lons), Math.min(...lats)],
+      [Math.max(...lons), Math.max(...lats)]], {
+      padding: { top: 110, bottom: 220, left: 70, right: 70 },
+      maxZoom: 13, duration: 700,
+    });
+  }
+}
+floodAllBox.addEventListener('change', () => toggleAllFlood(floodAllBox.checked));
+
+function renderFlood(query) {
+  if (!floodGroups) return;
+  // Eight rows fit anywhere, but the search box stays for the same reason the
+  // others have one: the list grows, and a flood lookup is by kelurahan.
+  const q = (query == null ? (floodSearch ? floodSearch.value : '') : query)
+    .trim().toLowerCase();
+  const byDistrict = new Map();
+  let shown = 0;
+  for (const p of FLOOD.list) {
+    const latest = p.reports && p.reports.length ? p.reports[0].text : '';
+    if (q && !(latest.toLowerCase().includes(q)
+      || (p.village || '').toLowerCase().includes(q)
+      || (p.district || '').toLowerCase().includes(q))) continue;
+    shown++;
+    if (!byDistrict.has(p.district)) byDistrict.set(p.district, []);
+    byDistrict.get(p.district).push(p);
+  }
+  const districts = Array.from(byDistrict.entries())
+    .sort((a, b) => String(a[0] || 'kecamatan tidak tercatat')
+      .localeCompare(String(b[0] || 'kecamatan tidak tercatat'), 'id'));
+
+  floodGroups.innerHTML = districts.map(([d, list]) => {
+    const label = d || 'kecamatan tidak tercatat';
+    list.sort((a, b) => String(b.last_date).localeCompare(String(a.last_date)));
+    return `<div class="tg" data-open="1">
+      <button class="tg-head" type="button" aria-expanded="true">
+        <svg class="tg-chev" width="11" height="11" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="3" stroke-linecap="round"
+             stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+        <span class="tg-t">Kecamatan ${esc(label)}</span><span class="tg-n">${list.length}</span>
+      </button>
+      <div class="tg-body">${list.map(p => {
+        const latest = p.reports && p.reports.length ? p.reports[0] : { text: '', depth_cm: null };
+        return `
+        <button class="road-row${p.key === selectedFlood ? ' is-sel' : ''}" type="button"
+                data-flkey="${esc(p.key)}" title="${esc(latest.text)}">
+          <span class="rr-badge">${p.max_depth_cm != null ? esc(p.max_depth_cm + ' cm') : 'banjir'}</span>
+          <span class="rr-name">${esc(latest.text)}</span>
+          <span class="rr-ref">${esc(idDate(p.last_date))}</span>
+        </button>`;
+      }).join('')}
+      </div></div>`;
+  }).join('');
+
+  // A wrong query can legitimately match nothing; say so.
+  if (floodEmpty) floodEmpty.hidden = shown > 0;
+
+  // Provenance, with the numbers that matter: how many reports were screened
+  // and how many survived, so eight pins read as "curated sample", not as the
+  // city's entire flood history. Without this the layer would understate the
+  // risk exactly the way a raw drill-stuffed feed would overstate it.
+  const sc = FLOOD.screening || {}, ct = FLOOD.counts || {}, sn = FLOOD.scanned || {};
+  const span = sn.from && sn.to
+    ? `, arsip <b>${esc(idDate(sn.from))}</b>–<b>${esc(idDate(sn.to))}</b>` : '';
+  floodNote.innerHTML = `<b>${ct.points != null ? ct.points : FLOOD.list.length}</b> titik `
+    + `dari <b>${sc.kept || FLOOD.list.length}</b> laporan banjir warga `
+    + `(PetaBencana.id${span}). Sebanyak <b>${sc.screened || '—'}</b> laporan Depok `
+    + `dipindai; <b>${sc.dropped || '—'}</b> di antaranya simulasi/pelatihan/uji coba `
+    + `dan tidak dipetakan. Titik = lokasi laporan, bukan verifikasi lapangan. `
+    + `Cari kelurahan atau kecamatan.`;
+}
+
+if (floodGroups) {
+  floodGroups.addEventListener('click', e => {
+    const head = e.target.closest('.tg-head');
+    if (head) {
+      const g = head.closest('.tg');
+      g.dataset.open = g.dataset.open === '1' ? '0' : '1';
+      return;
+    }
+    const row = e.target.closest('[data-flkey]');
+    if (!row) return;
+    const key = row.dataset.flkey;
+    if (key === selectedFlood) {
+      highlightFlood(null);           // tapping the selection clears it
+    } else {
+      highlightFlood(key);
+    }
+    if (window.matchMedia('(max-width: 760px)').matches) setSidebar(false);
+  });
+}
+
+if (floodSearch) {
+  floodSearch.addEventListener('input', () => renderFlood(floodSearch.value));
+  floodSearch.addEventListener('keydown', e => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const first = floodGroups.querySelector('[data-flkey]');
+    if (first) first.click();
+  });
+}
+
 document.getElementById('transport-card-x')
   .addEventListener('click', () => highlightRoute(null));
 
@@ -2634,6 +3282,8 @@ renderRoads();
 renderTransport();
 renderSchools();
 renderPuskesmas();
+renderFaskes();
+renderFlood();
 sideEl.hidden = true;
 /* Measure the attribution before the first overlay placement, so the card does
    not paint on top of the licence line and then jump. */
@@ -2658,4 +3308,5 @@ if (hash) {
 window.__depok = {
   map, state, KEL, KEC, rank, goCity, openDistrict, selectVillage, selectDistrict, applyTheme,
   setSidebar, setTab, renderAreaList, renderRoads, ROADS, PUSKESMAS, highlightPuskes,
+  FASKES, highlightFaskes, FLOOD, highlightFlood,
 };

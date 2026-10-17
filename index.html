@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>depok-map — peta wilayah Kota Depok</title>
-<meta name="description" content="Peta interaktif Kota Depok: pilih kecamatan untuk melihat kelurahan di dalamnya. 63 kelurahan dalam 11 kecamatan, lengkap dengan administrative hierarchy dan kode BPS.">
+<meta name="description" content="Peta interaktif Kota Depok: pilih kecamatan untuk melihat kelurahan di dalamnya. 63 kelurahan dalam 11 kecamatan, lengkap dengan jalan, transport, sekolah, puskesmas, faskes, dan riwayat laporan banjir.">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#f7f6f3">
 <link rel="stylesheet" href="/vendor/maplibre-gl.css">
@@ -70,7 +70,7 @@
     </button>
   </div>
 
-  <!-- Accordion, not tabs: the four sections are stacked collapsible headers.
+  <!-- Accordion, not tabs: the seven sections are stacked collapsible headers.
        One scroller (.side-body) owns the column; the open section's panel
        stretches to fill the remaining height and keeps its own internal
        scroller, sticky note and locate rows unchanged from the tab layout. -->
@@ -193,6 +193,56 @@
     </div>
   </div>
 
+    <button class="acc-head" id="tab-faskes" aria-expanded="false"
+            aria-controls="panel-faskes" type="button">
+      <svg class="acc-chev" width="12" height="12" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+      <span>Faskes</span>
+    </button>
+<!-- faskes (OSM health facilities) -------------------------------------- -->
+  <div class="side-panel" id="panel-faskes"
+       aria-labelledby="tab-faskes" hidden>
+    <div class="side-locate">
+      <label class="trans-all">
+        <span class="tog"><input type="checkbox" id="faskes-all"><i aria-hidden="true"></i></span>
+        <span>Tampilkan semua faskes</span>
+      </label>
+    </div>
+    <div class="side-scroll" id="faskes-scroll">
+      <p class="side-note" id="faskes-note"></p>
+      <input class="side-search" id="faskes-search" type="search"
+             placeholder="Cari nama, jenis, kelurahan..." autocomplete="off"
+             aria-label="Cari fasilitas kesehatan">
+      <div id="faskes-groups"></div>
+      <p class="road-empty" id="faskes-empty" hidden>Tidak ada faskes yang cocok.</p>
+    </div>
+  </div>
+
+    <button class="acc-head" id="tab-flood" aria-expanded="false"
+            aria-controls="panel-flood" type="button">
+      <svg class="acc-chev" width="12" height="12" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+      <span>Banjir</span>
+    </button>
+<!-- flood reports (PetaBencana.id) --------------------------------------- -->
+  <div class="side-panel" id="panel-flood"
+       aria-labelledby="tab-flood" hidden>
+    <div class="side-locate">
+      <label class="trans-all">
+        <span class="tog"><input type="checkbox" id="flood-all"><i aria-hidden="true"></i></span>
+        <span>Tampilkan semua titik banjir</span>
+      </label>
+    </div>
+    <div class="side-scroll" id="flood-scroll">
+      <p class="side-note" id="flood-note"></p>
+      <input class="side-search" id="flood-search" type="search"
+             placeholder="Cari kelurahan atau kecamatan..." autocomplete="off"
+             aria-label="Cari laporan banjir">
+      <div id="flood-groups"></div>
+      <p class="road-empty" id="flood-empty" hidden>Tidak ada titik banjir yang cocok.</p>
+    </div>
+  </div>
+
   </div><!-- /.side-body -->
 </aside>
 
@@ -278,6 +328,52 @@
   </div>
 </div>
 
+<!-- selected faskes detail ------------------------------------------------ -->
+<!-- Same card slot and stand-aside rule. Faskes come from OSM, so the facts
+     differ: an OSM ref instead of a Dinkes register, plus operator/hours when
+     the mapper recorded them. -->
+<div class="card trans-detail" id="faskes-detail" hidden>
+  <div class="card-top">
+    <div class="eyebrow" id="fk-eyebrow"></div>
+    <div class="card-name" id="fk-name"></div>
+    <button class="card-min" id="fk-min" type="button"
+            aria-label="Perkecil info" title="Perkecil info">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M6 9l6 6 6-6"/>
+      </svg>
+    </button>
+  </div>
+  <div class="ladder" id="fk-ladder"></div>
+  <div class="kids" id="fk-facts"></div>
+  <div class="card-foot">
+    <span class="code" id="fk-source"></span>
+  </div>
+</div>
+
+<!-- selected flood report detail ------------------------------------------ -->
+<!-- One pin per report location, so the card is a mini event log: date and
+     depth per report, original text included, plus the stand-aside disclaimer
+     that pins are report locations, not field measurements. -->
+<div class="card trans-detail" id="flood-detail" hidden>
+  <div class="card-top">
+    <div class="eyebrow" id="fl-eyebrow"></div>
+    <div class="card-name" id="fl-name"></div>
+    <button class="card-min" id="fl-min" type="button"
+            aria-label="Perkecil info" title="Perkecil info">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M6 9l6 6 6-6"/>
+      </svg>
+    </button>
+  </div>
+  <div class="ladder" id="fl-ladder"></div>
+  <div class="kids" id="fl-facts"></div>
+  <div class="card-foot">
+    <span class="code" id="fl-source"></span>
+  </div>
+</div>
+
 <!-- answer card ------------------------------------------------------- -->
 <div class="card" id="card"></div>
 
@@ -319,7 +415,9 @@
   Roads: <a href="https://jdih-dprd.depok.go.id/" rel="noopener">Perda Kota Depok No. 9/2022</a> Pasal 16 ·
   Transport: <a href="https://www.openstreetmap.org/copyright" rel="noopener">OpenStreetMap</a> ·
   <a href="https://berita.depok.go.id/" rel="noopener">Dishub Kota Depok</a> ·
-  Puskesmas: <a href="https://dinkes.depok.go.id/User/portal_puskesmas" rel="noopener">Dinkes Kota Depok</a>
+  Puskesmas: <a href="https://dinkes.depok.go.id/User/portal_puskesmas" rel="noopener">Dinkes Kota Depok</a> ·
+  Faskes: <a href="https://www.openstreetmap.org/copyright" rel="noopener">OpenStreetMap</a> (ODbL) ·
+  Banjir: <a href="https://petabencana.id" rel="noopener">PetaBencana.id</a>
 </footer>
 
 <script src="/vendor/maplibre-gl.js"></script>
@@ -328,6 +426,8 @@
 <script src="/src/transport.js"></script>
 <script src="/src/schools.js"></script>
 <script src="/src/puskesmas.js"></script>
+<script src="/src/faskes.js"></script>
+<script src="/src/flood.js"></script>
 <script src="/src/app.js"></script>
 </body>
 </html>

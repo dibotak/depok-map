@@ -543,6 +543,34 @@ body.card-collapsed .card { padding-bottom: 10px; }
 .road-row.is-dead .rr-name { font-style: italic; }
 .road-empty { padding: 10px 13px 12px 26px; font-size: 12px; color: var(--faint); }
 
+/* --- collapsible list groups --- */
+/* Shared by the four list panels: schools, puskesmas, faskes and flood
+   reports. The templates have emitted `.tg[data-open]` group headers and the
+   JS has toggled `data-open` since the schools list landed, but no rules were
+   ever written for either, so the header rendered as a bare form button and a
+   group could not actually collapse. Modelled on .road-group above. */
+.tg { border-bottom: 1px solid var(--border); }
+.tg:last-child { border-bottom: 0; }
+.tg-head {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 9px 13px;
+  font: inherit; text-align: left;
+  color: var(--ink); background: transparent;
+  border: 0; cursor: pointer;
+}
+.tg-head:hover { background: var(--bg); }
+.tg-chev {
+  flex: none; color: var(--faint); line-height: 1;
+  transition: transform var(--dur) var(--ease);
+  transform: rotate(-90deg);
+}
+.tg[data-open="1"] .tg-chev { transform: rotate(0deg); }
+.tg-t { flex: 1; min-width: 0; font-size: 12.5px; font-weight: 620; }
+.tg-n {
+  flex: none; font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums;
+}
+.tg[data-open="0"] .tg-body { display: none; }
+
 /* Transport list. Reuses .road-row/.rr-* deliberately — the rows have the same
    shape and interaction as jalan rows, so a second set of class names would
    mean duplicating every rule for no gain. The transport-only additions are
@@ -894,14 +922,19 @@ html[data-theme="dark"] .trans-warn { color: #fbbf24; }
 .tog input:checked + i::after { transform: translateX(14px); background: #fff; }
 .tog input:focus-visible + i { box-shadow: 0 0 0 3px var(--accent-soft); }
 /* Per-section accents: violet for routes, teal for schools, rose for
-   puskesmas — the same colours the map layers and detail cards already use, so
-   the switch never reads as a third, unrelated accent. */
+   puskesmas, lime for faskes, blue for flood reports — the same colours the
+   map layers and detail cards already use, so the switch never reads as a
+   third, unrelated accent. */
 #panel-transport { --tog-accent: #6d28d9; }
 #panel-school { --tog-accent: #0f766e; }
 #panel-puskes { --tog-accent: #b91c1c; }
+#panel-faskes { --tog-accent: #4d7c0f; }
+#panel-flood { --tog-accent: #1d4ed8; }
 html[data-theme="dark"] #panel-transport { --tog-accent: #a78bfa; }
 html[data-theme="dark"] #panel-school { --tog-accent: #2dd4bf; }
 html[data-theme="dark"] #panel-puskes { --tog-accent: #fb7185; }
+html[data-theme="dark"] #panel-faskes { --tog-accent: #a3e635; }
+html[data-theme="dark"] #panel-flood { --tog-accent: #60a5fa; }
 
 /* ---------- secondary schools ---------- */
 /* Teal, a fourth colour family alongside the green admin areas, orange roads
@@ -909,6 +942,13 @@ html[data-theme="dark"] #panel-puskes { --tog-accent: #fb7185; }
    something else. */
 #school-detail { --road-c: #0f766e; }
 html[data-theme="dark"] #school-detail { --road-c: #2dd4bf; }
+
+/* Faskes (lime) and flood-report (blue) cards carry the accent of the pin
+   family they belong to, like the schools and puskesmas cards do. */
+#faskes-detail { --road-c: #4d7c0f; }
+html[data-theme="dark"] #faskes-detail { --road-c: #a3e635; }
+#flood-detail { --road-c: #1d4ed8; }
+html[data-theme="dark"] #flood-detail { --road-c: #60a5fa; }
 
 /* ---------- schools ---------- */
 /* A 250-row list needs a filter box. Sized like the top search bar and reusing
