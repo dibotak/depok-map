@@ -315,9 +315,12 @@ body.card-collapsed .card { padding-bottom: 10px; }
    map is padded to match via VIEW_PADDING.left so nothing sits under the panel. */
 .sidebar {
   position: absolute; z-index: 1100;
-  /* Clears the top bar: 16px inset + 46px row + 12px gap. The panel previously
-     started at 12px and ran under the search box and toggle. */
-  top: calc(max(16px, env(safe-area-inset-top)) + 58px);
+  /* Clears the top bar: 16px inset + 12px gap + the left toggle column's
+     measured height. The column carries two stacked buttons now (sidebar
+     toggle + area toggle), so a hardcoded 46px row would run the panel under
+     the second one; --topbar-left-h is set by syncTopbarInset, and 46px is
+     the first-paint fallback. */
+  top: calc(max(16px, env(safe-area-inset-top)) + 12px + var(--topbar-left-h, 46px));
   bottom: max(12px, env(safe-area-inset-bottom));
   left: max(12px, env(safe-area-inset-left));
   width: min(316px, calc(100vw - 24px));
@@ -662,6 +665,42 @@ body.side-open .side-toggle {
   background: var(--bg);
 }
 
+/* --- the toggle column --- */
+/* Sidebar toggle on top, area toggle under it. The wrapper keeps the grid's
+   left track at one width; it is pointer-events:none (re-enabled on the
+   buttons themselves) so the 6px gap between them still belongs to the map,
+   like the gaps around every other floating control. */
+.topbar-left {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  pointer-events: none;
+}
+.topbar-left > * { pointer-events: auto; }
+
+/* Area select: whether a bare map click selects the kecamatan/kelurahan
+   underneath. Its own control rather than a state of the sidebar button
+   (that one owns the panel), and smaller, so it reads as second. */
+.area-toggle {
+  display: flex; align-items: center; justify-content: center;
+  width: 38px; height: 38px; padding: 0;
+  font: inherit; color: var(--faint);
+  background: var(--surface);
+  -webkit-backdrop-filter: saturate(180%) blur(14px);
+  backdrop-filter: saturate(180%) blur(14px);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  box-shadow: var(--shadow-1);
+  cursor: pointer;
+  transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease),
+              box-shadow var(--dur) var(--ease);
+}
+.area-toggle:hover { color: var(--ink); border-color: var(--border-strong); }
+/* Armed: accent icon with the same soft ring the search box shows on focus. */
+.area-toggle[aria-pressed="true"] {
+  color: var(--accent);
+  border-color: var(--accent);
+  box-shadow: var(--shadow-1), 0 0 0 3px var(--accent-soft);
+}
+
 /* --- theme, in the sidebar header --- */
 /* Moved out of the search box: it was eating ~44px of input width, and the
    input is the primary control on a phone. */
@@ -709,16 +748,18 @@ body.side-open .card {
    map, so the user can tell the panel is an overlay and not the whole screen. */
 @media (max-width: 760px) {
   .sidebar {
-    top: calc(max(10px, env(safe-area-inset-top)) + 56px);
+    top: calc(max(10px, env(safe-area-inset-top)) + 10px + var(--topbar-left-h, 46px));
     /* bottom unset: a fixed height is what makes the inner list scrollable. */
     bottom: auto;
-    height: min(78dvh, calc(100dvh - 150px));
+    height: min(78dvh, calc(100dvh - 104px - var(--topbar-left-h, 46px)));
     /* Fallback for browsers without dvh (older Safari): vh is wrong when the
        URL bar shows, but it is better than no height at all. */
-    max-height: calc(100vh - 150px);
+    max-height: calc(100vh - 104px - var(--topbar-left-h, 46px));
   }
-  /* Match the 44px search box so the top row stays one level. */
+  /* Match the 44px search box so the top row stays one level; the area toggle
+     steps up to the 40px touch size with it. */
   .side-toggle { width: 44px; height: 44px; }
+  .area-toggle { width: 40px; height: 40px; }
   /* Tap targets: 44px is the WCAG 2.5.5 / iOS minimum for anything a thumb has
      to hit. The 30x30 icon buttons and 30px-tall rows measured well under it. */
   .side-theme, .side-close { width: 40px; height: 40px; }
@@ -757,7 +798,7 @@ body.side-open .card {
    721-1024px where the search box is already 520px wide. Below the row is clear
    at every width, and it only appears from kecamatan level onward. */
 .back {
-  top: calc(max(16px, env(safe-area-inset-top)) + 58px);
+  top: calc(max(16px, env(safe-area-inset-top)) + 12px + var(--topbar-left-h, 46px));
 }
 
 /* Between 721px and 1024px the search box is still centred and its

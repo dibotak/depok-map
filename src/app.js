@@ -49,6 +49,10 @@ const STYLES = {
 const state = {
   theme: localStorage.getItem('depok-theme')
     || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'),
+  // Whether a bare map click selects the kecamatan/kelurahan under it. On by
+  // default; the toggle under the sidebar button flips it and the choice
+  // sticks. Off, map clicks only ever talk to the point layers.
+  areaSelect: localStorage.getItem('depok-area-select') !== '0',
   view: 'city',      // 'city' | 'kecamatan'
   district: null,    // district_code of the open kecamatan
   village: null,     // selected village name
@@ -729,27 +733,91 @@ function addLayers() {
 
 map.on('load', addLayers);
 
-/* Click routing: a kecamatan click opens it, a kelurahan click selects it.
-   Both levels are clickable at once once drilled in — the open kecamatan's
-   children sit on top of their parent, so a click inside it reaches both
-   handlers. The parent's handler ignores its own district_code and lets the
-   kelurahan handler win; a click on one of the other 10 switches to it
-   directly, which is the same gesture as at city view. */
-map.on('click', 'kec-fill', e => {
-  const f = e.features && e.features[0];
-  if (!f) return;
-  if (f.properties.district_code === state.district) return;
-  openDistrict(f.properties.district_code);
+/* Click routing, in one handler so the precedence is explicit and a single
+   click never means two things.
+
+   1. Points first. A click on a school, puskesmas, faskes or flood pin is the
+      same action as clicking that row in the sidebar: select it, fly to it,
+      show its card, and bring the row into view. The polygon under the pin
+      stands down — pin + area in one click would fight over the card slot.
+   2. Then the polygons, while area select is on (the toggle under the sidebar
+      button; on by default). A kecamatan click opens it, a kelurahan click
+      selects it. Both levels are live at once once drilled in — the open
+      kecamatan's children sit on top of their parent, so the kelurahan wins;
+      a click on one of the other 10 switches to it directly, which is the
+      same gesture as at city view. */
+const PIN_FAMILIES = [
+  { layers: ['school-sel-label', 'school-sel', 'school-all'],
+    select: highlightSchool, tab: 'school', panel: 'school-groups',
+    attr: 'data-skey', ds: 'skey' },
+  { layers: ['puskes-sel-label', 'puskes-sel', 'puskes-all'],
+    select: highlightPuskes, tab: 'puskes', panel: 'puskes-groups',
+    attr: 'data-pkey', ds: 'pkey' },
+  { layers: ['faskes-sel-label', 'faskes-sel', 'faskes-all'],
+    select: highlightFaskes, tab: 'faskes', panel: 'faskes-groups',
+    attr: 'data-fkey', ds: 'fkey' },
+  { layers: ['flood-sel-label', 'flood-sel', 'flood-all'],
+    select: highlightFlood, tab: 'flood', panel: 'flood-groups',
+    attr: 'data-flkey', ds: 'flkey' },
+];
+
+map.on('click', e => {
+  // Pre-load (and mid-theme-swap, while restoreLayers holds mapReady down)
+  // there is nothing to hit, and querying would only warn about layers that do
+  // not exist yet. Same gate paint() uses.
+  if (!mapReady) return;
+  for (const fam of PIN_FAMILIES) {
+    const hit = map.queryRenderedFeatures(e.point, { layers: fam.layers });
+    if (!hit.length) continue;
+    const key = hit[0].properties && hit[0].properties.key;
+    if (key == null) continue;
+    fam.select(key);
+    revealSelection(fam, key);
+    return;
+  }
+  if (!state.areaSelect) return;
+  if (state.view === 'kecamatan') {
+    const kel = map.queryRenderedFeatures(e.point, { layers: ['kel-fill'] });
+    if (kel.length) {
+      selectVillage(kel[0].properties.village_code);
+      return;
+    }
+  }
+  const kec = map.queryRenderedFeatures(e.point, { layers: ['kec-fill'] });
+  if (kec.length && kec[0].properties.district_code !== state.district) {
+    openDistrict(kec[0].properties.district_code);
+  }
 });
 
-map.on('click', 'kel-fill', e => {
-  if (state.view !== 'kecamatan') return;
-  const f = e.features && e.features[0];
-  if (f) selectVillage(f.properties.village_code);
-});
+/** Mirror of a sidebar row click: after a pin click selects something, show
+ *  the matching list and scroll its row into view, so the selection reads in
+ *  the panel the same way the pin reads on the map. Skipped while the panel
+ *  is closed — the card is the feedback there, and forcing the panel open
+ *  would cover the map the click just used. */
+function revealSelection(fam, key) {
+  if (sideEl.hidden) return;
+  setTab(fam.tab);
+  for (const row of document.querySelectorAll(`#${fam.panel} [${fam.attr}]`)) {
+    if (row.dataset[fam.ds] === key) {
+      row.scrollIntoView({ block: 'nearest' });
+      return;
+    }
+  }
+}
 
+/* Pointer cursor while something clickable is under the pointer: the point
+   layers always, the polygons only while area select is on (off, they are
+   inert and the cursor should say so). */
+for (const fam of PIN_FAMILIES) {
+  for (const layer of fam.layers) {
+    map.on('mousemove', layer, () => { map.getCanvas().style.cursor = 'pointer'; });
+    map.on('mouseout', layer, () => { map.getCanvas().style.cursor = ''; });
+  }
+}
 for (const layer of ['kec-fill', 'kel-fill']) {
-  map.on('mousemove', layer, () => { map.getCanvas().style.cursor = 'pointer'; });
+  map.on('mousemove', layer, () => {
+    if (state.areaSelect) map.getCanvas().style.cursor = 'pointer';
+  });
   map.on('mouseout', layer, () => { map.getCanvas().style.cursor = ''; });
 }
 
@@ -1579,6 +1647,20 @@ function syncAttribInset() {
   if (h > 0) document.documentElement.style.setProperty('--attrib-h', `${h}px`);
 }
 
+/** Publish the toggle column's measured height so the sidebar and the back
+ *  button can clear it.
+ *
+ *  The topbar's left column stacks two buttons now (sidebar + area toggle) and
+ *  its height changes with the breakpoint's button sizes, so a hardcoded
+ *  offset would put the panel under the second button. The CSS falls back to
+ *  46px, the old single-row height, for the first paint before this runs.
+ */
+function syncTopbarInset() {
+  const col = document.querySelector('.topbar-left');
+  const h = col ? Math.round(col.getBoundingClientRect().height) : 0;
+  if (h > 0) document.documentElement.style.setProperty('--topbar-left-h', `${h}px`);
+}
+
 /**
  * Keep the map canvas the same size as its container, and the container the same
  * size as the viewport.
@@ -1633,10 +1715,12 @@ document.getElementById('road-card-x').addEventListener('click', () => highlight
 
 // The banner's offset depends on the answer card's position, which moves on
 // rotate and on viewport changes.
-/* Re-measure the attribution first: its height feeds the card's bottom offset,
-   and the road banner then stacks on whatever the card ended up doing. Order
-   matters -- the banner reads the card's new top edge. */
+/* Re-measure the fixed overlays: --topbar-left-h keeps the sidebar and back
+   button clear of the toggle column, and the attribution's height feeds the
+   card's bottom offset; the road banner then stacks on whatever the card
+   ended up doing. Order matters -- the banner reads the card's new top edge. */
 function relayoutOverlays() {
+  syncTopbarInset();
   syncAttribInset();
   // The container is viewport-sized, so a rotate or a browser-UI collapse
   // leaves it at the old size until something corrects it. Without this the
@@ -1663,6 +1747,30 @@ if (typeof ResizeObserver === 'function') {
 
 sideToggle.addEventListener('click', () => setSidebar(sideEl.hidden));
 sideClose.addEventListener('click', () => setSidebar(false));
+
+/* ---------- area-select toggle ---------- */
+const areaToggle = document.getElementById('area-toggle');
+
+/** Area select: should a bare map click -- one that misses every pin -- pick
+ *  the kecamatan or kelurahan under the pointer? On by default, and the
+ *  choice sticks like the theme. Off, the polygons are inert so pins can be
+ *  browsed without re-drilling the map. The explicit area entries (a search
+ *  result, the locate button) keep selecting either way: those say what they
+ *  do before they are used. */
+function setAreaSelect(on) {
+  on = !!on;
+  state.areaSelect = on;
+  localStorage.setItem('depok-area-select', on ? '1' : '0');
+  areaToggle.setAttribute('aria-pressed', String(on));
+  const label = on
+    ? 'Pilih wilayah dengan klik peta: aktif (klik untuk mematikan)'
+    : 'Pilih wilayah dengan klik peta: nonaktif (klik untuk mengaktifkan)';
+  areaToggle.setAttribute('aria-label', label);
+  areaToggle.title = on ? 'Pilih wilayah: aktif' : 'Pilih wilayah: nonaktif';
+}
+areaToggle.addEventListener('click', () => setAreaSelect(!state.areaSelect));
+setAreaSelect(state.areaSelect);  // the control follows the stored choice
+
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && !sideEl.hidden) setSidebar(false);
 });
@@ -3308,5 +3416,5 @@ if (hash) {
 window.__depok = {
   map, state, KEL, KEC, rank, goCity, openDistrict, selectVillage, selectDistrict, applyTheme,
   setSidebar, setTab, renderAreaList, renderRoads, ROADS, PUSKESMAS, highlightPuskes,
-  FASKES, highlightFaskes, FLOOD, highlightFlood,
+  FASKES, highlightFaskes, FLOOD, highlightFlood, setAreaSelect,
 };

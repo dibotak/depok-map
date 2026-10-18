@@ -64,6 +64,17 @@ would 404 every asset — use `map.dibotak.com`, not a subpath.
     Stacked headers wrap by nature, collapsed sections sit as quiet headers
     between open ones, and `setTab()` is the single owner of the open state —
     exactly one panel is ever open.
+- **Every point answers a map click, in both directions.** A click on a school,
+  puskesmas, faskes or flood pin is the same action as clicking that row in the
+  sidebar: the map flies to it, its card opens, and the sidebar switches to the
+  matching section with the row highlighted and scrolled into view. The pin
+  takes the whole click — the kecamatan/kelurahan underneath does not also
+  react, because a pin plus an area in one click would fight over the card slot.
+- **Area select has its own toggle**, the second round button in the topbar's
+  left column, right under the sidebar button (on by default, remembered like
+  the theme). Off, bare map clicks leave the polygons alone, so pins can be
+  browsed without re-drilling the map; search results and *Cari lokasi saya*
+  still select areas, because those say what they do before they are used.
 - **Search fills the row.** The top bar is two grid columns — the icon button,
   then the search stretching across everything left over — so the input takes
   ~80% of a phone's width and ~94% on desktop. It is no longer centred: with
@@ -125,12 +136,15 @@ would 404 every asset — use `map.dibotak.com`, not a subpath.
   the licence line by a *measured* amount — the attribution wraps to 53px at
   390px wide but only 39px at 430px, so its real height is published as
   `--attrib-h` by `syncAttribInset()` and re-derived on resize, rotate, and
-  theme change. The card and road banner are hidden outright while the panel is
-  open; at full width the panel covers the map anyway, so a card peeking out
-  underneath it just looked broken. Every control a thumb has to hit is at least
-  40px: the theme and close buttons, the search clear button, the card
-  minimise, the GPS button, each list row, and MapLibre's own zoom/compass
-  buttons (29px by default).
+  theme change. The sidebar's and back button's top offset is measured the same
+  way — `--topbar-left-h` from `syncTopbarInset()` — because the topbar's left
+  column stacks the sidebar toggle and the area toggle and its height depends
+  on the breakpoint's button sizes. The card and road banner are hidden outright
+  while the panel is open; at full width the panel covers the map anyway, so a
+  card peeking out underneath it just looked broken. Every control a thumb has
+  to hit is at least 40px: the theme, close, and area-toggle buttons, the search
+  clear button, the card minimise, the GPS button, each list row, and
+  MapLibre's own zoom/compass buttons (29px by default).
 
 At each level the map shows only that level's detail — 63 kelurahan lines drawn
 over 11 kecamatan outlines at city zoom reads as noise, not hierarchy. The
