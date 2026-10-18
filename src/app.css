@@ -971,11 +971,13 @@ html[data-theme="dark"] .trans-warn { color: #fbbf24; }
 #panel-puskes { --tog-accent: #b91c1c; }
 #panel-faskes { --tog-accent: #4d7c0f; }
 #panel-flood { --tog-accent: #1d4ed8; }
+#panel-kurasi { --tog-accent: #a21caf; }
 html[data-theme="dark"] #panel-transport { --tog-accent: #a78bfa; }
 html[data-theme="dark"] #panel-school { --tog-accent: #2dd4bf; }
 html[data-theme="dark"] #panel-puskes { --tog-accent: #fb7185; }
 html[data-theme="dark"] #panel-faskes { --tog-accent: #a3e635; }
 html[data-theme="dark"] #panel-flood { --tog-accent: #60a5fa; }
+html[data-theme="dark"] #panel-kurasi { --tog-accent: #e879f9; }
 
 /* ---------- secondary schools ---------- */
 /* Teal, a fourth colour family alongside the green admin areas, orange roads
@@ -985,11 +987,14 @@ html[data-theme="dark"] #panel-flood { --tog-accent: #60a5fa; }
 html[data-theme="dark"] #school-detail { --road-c: #2dd4bf; }
 
 /* Faskes (lime) and flood-report (blue) cards carry the accent of the pin
-   family they belong to, like the schools and puskesmas cards do. */
+   family they belong to, like the schools and puskesmas cards do. Curator
+   points (fuchsia) do the same. */
 #faskes-detail { --road-c: #4d7c0f; }
 html[data-theme="dark"] #faskes-detail { --road-c: #a3e635; }
 #flood-detail { --road-c: #1d4ed8; }
 html[data-theme="dark"] #flood-detail { --road-c: #60a5fa; }
+#kurasi-detail { --road-c: #a21caf; }
+html[data-theme="dark"] #kurasi-detail { --road-c: #e879f9; }
 
 /* ---------- schools ---------- */
 /* A 250-row list needs a filter box. Sized like the top search bar and reusing

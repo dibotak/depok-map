@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>depok-map — peta wilayah Kota Depok</title>
-<meta name="description" content="Peta interaktif Kota Depok: pilih kecamatan untuk melihat kelurahan di dalamnya. 63 kelurahan dalam 11 kecamatan, lengkap dengan jalan, transport, sekolah, puskesmas, faskes, dan riwayat laporan banjir.">
+<meta name="description" content="Peta interaktif Kota Depok: pilih kecamatan untuk melihat kelurahan di dalamnya. 63 kelurahan dalam 11 kecamatan, lengkap dengan jalan, transport, sekolah, puskesmas, faskes, riwayat laporan banjir, dan titik kurasi.">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#f7f6f3">
 <link rel="stylesheet" href="/vendor/maplibre-gl.css">
@@ -261,6 +261,31 @@
     </div>
   </div>
 
+    <button class="acc-head" id="tab-kurasi" aria-expanded="false"
+            aria-controls="panel-kurasi" type="button">
+      <svg class="acc-chev" width="12" height="12" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+      <span id="kurasi-title">Kurasi</span>
+    </button>
+<!-- curator points (Studio Atlas) ---------------------------------------- -->
+  <div class="side-panel" id="panel-kurasi"
+       aria-labelledby="tab-kurasi" hidden>
+    <div class="side-locate">
+      <label class="trans-all">
+        <span class="tog"><input type="checkbox" id="kurasi-all"><i aria-hidden="true"></i></span>
+        <span>Tampilkan semua titik kurasi</span>
+      </label>
+    </div>
+    <div class="side-scroll" id="kurasi-scroll">
+      <p class="side-note" id="kurasi-note"></p>
+      <input class="side-search" id="kurasi-search" type="search"
+             placeholder="Cari nama, jenis, kelurahan..." autocomplete="off"
+             aria-label="Cari titik kurasi">
+      <div id="kurasi-groups"></div>
+      <p class="road-empty" id="kurasi-empty" hidden>Tidak ada titik kurasi yang cocok.</p>
+    </div>
+  </div>
+
   </div><!-- /.side-body -->
 </aside>
 
@@ -392,6 +417,29 @@
   </div>
 </div>
 
+<!-- selected curator point detail ----------------------------------------- -->
+<!-- Same card slot and stand-aside rule. The one thing this card must carry
+     that no other card does: why the point exists (the curator's reason) and
+     where it came from, because the layer is edits, not a register. -->
+<div class="card trans-detail" id="kurasi-detail" hidden>
+  <div class="card-top">
+    <div class="eyebrow" id="kr-eyebrow"></div>
+    <div class="card-name" id="kr-name"></div>
+    <button class="card-min" id="kr-min" type="button"
+            aria-label="Perkecil info" title="Perkecil info">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M6 9l6 6 6-6"/>
+      </svg>
+    </button>
+  </div>
+  <div class="ladder" id="kr-ladder"></div>
+  <div class="kids" id="kr-facts"></div>
+  <div class="card-foot">
+    <span class="code" id="kr-source"></span>
+  </div>
+</div>
+
 <!-- answer card ------------------------------------------------------- -->
 <div class="card" id="card"></div>
 
@@ -435,7 +483,8 @@
   <a href="https://berita.depok.go.id/" rel="noopener">Dishub Kota Depok</a> ·
   Puskesmas: <a href="https://dinkes.depok.go.id/User/portal_puskesmas" rel="noopener">Dinkes Kota Depok</a> ·
   Faskes: <a href="https://www.openstreetmap.org/copyright" rel="noopener">OpenStreetMap</a> (ODbL) ·
-  Banjir: <a href="https://petabencana.id" rel="noopener">PetaBencana.id</a>
+  Banjir: <a href="https://petabencana.id" rel="noopener">PetaBencana.id</a> ·
+  Kurasi: <a href="https://portal.dibotak.com/ensiklopedia-studio/" rel="noopener">Studio Atlas</a>
 </footer>
 
 <script src="/vendor/maplibre-gl.js"></script>
@@ -445,6 +494,7 @@
 <script src="/src/schools.js"></script>
 <script src="/src/puskesmas.js"></script>
 <script src="/src/faskes.js"></script>
+<script src="/src/kurasi.js"></script>
 <script src="/src/flood.js"></script>
 <script src="/src/app.js"></script>
 </body>

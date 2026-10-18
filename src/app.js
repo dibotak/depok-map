@@ -82,6 +82,9 @@ const PALETTE = {
     // never read as a school, a puskesmas, or anything else.
     faskes: '#4d7c0f',
     flood: '#1d4ed8',
+    // Curator points (Studio Atlas) are fuchsia: the seventh family, close to
+    // no other accent on the map.
+    kurasi: '#a21caf',
   },
   dark: {
     sel: '#6fd39b', selFill: '#6fd39b', peer: '#3f7f5c', peerFill: '#38745a',
@@ -92,6 +95,7 @@ const PALETTE = {
     puskes: '#fb7185',
     faskes: '#a3e635',
     flood: '#60a5fa',
+    kurasi: '#e879f9',
   },
 };
 
@@ -130,6 +134,11 @@ const SRC_FASKES = 'faskes-terpilih';
 const SRC_FASKES_ALL = 'faskes-semua';
 const SRC_FLOOD = 'banjir-terpilih';
 const SRC_FLOOD_ALL = 'banjir-semua';
+/* Curator points from Studio Atlas (ensiklopedia-kota), same two-source
+   shape again: the selected point is the subject, the show-all layer is the
+   context underneath it. */
+const SRC_KURASI = 'kurasi-terpilih';
+const SRC_KURASI_ALL = 'kurasi-semua';
 let mapReady = false;
 
 /**
@@ -229,6 +238,12 @@ function paint() {
     ['flood-sel', 'circle-stroke-color', p.halo],
     ['flood-sel-label', 'text-color', p.flood],
     ['flood-sel-label', 'text-halo-color', p.halo],
+    ['kurasi-all', 'circle-color', p.kurasi],
+    ['kurasi-all', 'circle-stroke-color', p.halo],
+    ['kurasi-sel', 'circle-color', p.kurasi],
+    ['kurasi-sel', 'circle-stroke-color', p.halo],
+    ['kurasi-sel-label', 'text-color', p.kurasi],
+    ['kurasi-sel-label', 'text-halo-color', p.halo],
   ]) {
     if (map.getLayer(id)) map.setPaintProperty(id, prop, val);
   }
@@ -633,6 +648,56 @@ function addLayers() {
       },
     });
   }
+  // Curator points (Studio Atlas). Fuchsia — the seventh family, so a curated
+  // point never reads as any of the layers above it.
+  for (const id of [SRC_KURASI_ALL, SRC_KURASI]) {
+    if (!map.getSource(id)) {
+      map.addSource(id, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    }
+  }
+  if (!map.getLayer('kurasi-all')) {
+    map.addLayer({
+      id: 'kurasi-all', type: 'circle', source: SRC_KURASI_ALL,
+      paint: {
+        'circle-radius': ['interpolate', ['linear'], ['zoom'],
+          11, 3, 13, 4.5, 16, 7],
+        'circle-color': PALETTE[state.theme].kurasi,
+        'circle-opacity': 0.62,
+        'circle-stroke-width': 1,
+        'circle-stroke-color': PALETTE[state.theme].halo,
+        'circle-stroke-opacity': 0.5,
+      },
+    });
+  }
+  if (!map.getLayer('kurasi-sel')) {
+    map.addLayer({
+      id: 'kurasi-sel', type: 'circle', source: SRC_KURASI,
+      paint: {
+        'circle-radius': ['interpolate', ['linear'], ['zoom'],
+          11, 5, 13, 8, 16, 12],
+        'circle-color': PALETTE[state.theme].kurasi,
+        'circle-stroke-width': 2.5,
+        'circle-stroke-color': PALETTE[state.theme].halo,
+      },
+    });
+    map.addLayer({
+      id: 'kurasi-sel-label', type: 'symbol', source: SRC_KURASI,
+      layout: {
+        'text-field': ['get', 'name'],
+        'text-size': 12,
+        'text-font': ['Noto Sans Regular'],
+        'text-anchor': 'top',
+        'text-offset': [0, 1.1],
+        'text-max-width': 14,
+        'text-allow-overlap': false,
+      },
+      paint: {
+        'text-color': PALETTE[state.theme].kurasi,
+        'text-halo-color': PALETTE[state.theme].halo,
+        'text-halo-width': 2,
+      },
+    });
+  }
   if (!map.getLayer('trans-sel')) {
     map.addLayer({
       id: 'trans-sel-halo', type: 'line', source: SRC_TRANS,
@@ -756,6 +821,9 @@ const PIN_FAMILIES = [
   { layers: ['faskes-sel-label', 'faskes-sel', 'faskes-all'],
     select: highlightFaskes, tab: 'faskes', panel: 'faskes-groups',
     attr: 'data-fkey', ds: 'fkey' },
+  { layers: ['kurasi-sel-label', 'kurasi-sel', 'kurasi-all'],
+    select: highlightKurasi, tab: 'kurasi', panel: 'kurasi-groups',
+    attr: 'data-krkey', ds: 'krkey' },
   { layers: ['flood-sel-label', 'flood-sel', 'flood-all'],
     select: highlightFlood, tab: 'flood', panel: 'flood-groups',
     attr: 'data-flkey', ds: 'flkey' },
@@ -911,20 +979,23 @@ function clearSubCards() {
   selectedPuskes = null;
   selectedFaskes = null;
   selectedFlood = null;
+  selectedKurasi = null;
   // Drop the markers too, or a stale pin stays on the map with no card for it.
   const rt = map.getSource(SRC_TRANS), sr = map.getSource(SRC_SCHOOL);
   const pr = map.getSource(SRC_PUSKES);
   const fr = map.getSource(SRC_FASKES), fl = map.getSource(SRC_FLOOD);
+  const kr = map.getSource(SRC_KURASI);
   if (rt) rt.setData({ type: 'FeatureCollection', features: [] });
   if (sr) sr.setData({ type: 'FeatureCollection', features: [] });
   if (pr) pr.setData({ type: 'FeatureCollection', features: [] });
   if (fr) fr.setData({ type: 'FeatureCollection', features: [] });
   if (fl) fl.setData({ type: 'FeatureCollection', features: [] });
+  if (kr) kr.setData({ type: 'FeatureCollection', features: [] });
   card.hidden = false;
 }
 
-/** One detail slot, five possible cards. Opening any of them hides the other
- *  four first, or two .cards would paint on top of each other in the same
+/** One detail slot, six possible cards. Opening any of them hides the other
+ *  five first, or two .cards would paint on top of each other in the same
  *  fixed slot. The deselect paths inside each highlight*() still call their
  *  own render*Card(null) directly. */
 function hideDetailCards() {
@@ -933,6 +1004,7 @@ function hideDetailCards() {
   renderPuskesCard(null);
   renderFaskesCard(null);
   renderFloodCard(null);
+  renderKurasiCard(null);
 }
 
 function selectDistrict(name, opts = {}) {
@@ -1464,6 +1536,22 @@ function restoreLayers() {
         fs.setData({ type: 'FeatureCollection', features: FLOOD.list.map(floodFeature) });
       }
     }
+    if (selectedKurasi) {
+      const kr = KURASI.list.find(x => x.key === selectedKurasi);
+      const src = map.getSource(SRC_KURASI);
+      if (kr && src) {
+        src.setData({ type: 'FeatureCollection', features: [kurasiFeature(kr)] });
+      }
+    }
+    if (showAllKurasi) {
+      const ks = map.getSource(SRC_KURASI_ALL);
+      if (ks) {
+        ks.setData({
+          type: 'FeatureCollection',
+          features: KURASI.list.filter(hasKurasiPin).map(kurasiFeature),
+        });
+      }
+    }
     stop();
   };
 
@@ -1598,7 +1686,10 @@ function renderRoadCard(road, label) {
     roadCard.hidden = true;
     return;
   }
-  roadCardKlas.textContent = label;
+  // A row whose badge was overridden through Studio Atlas keeps its Perda group
+  // label as the reference, with the marker appended: the banner must never
+  // read as if the Perda itself said the curated class.
+  roadCardKlas.textContent = road.kurasi ? `${label} · kurasi` : label;
   roadCardName.textContent = road.name;
   roadCard.style.setProperty('--road-c', PALETTE[state.theme].road);
   roadCard.hidden = false;
@@ -1788,6 +1879,7 @@ const TABS = [
   { id: 'puskes', tab: 'tab-puskes', panel: 'panel-puskes' },
   { id: 'faskes', tab: 'tab-faskes', panel: 'panel-faskes' },
   { id: 'flood', tab: 'tab-flood', panel: 'panel-flood' },
+  { id: 'kurasi', tab: 'tab-kurasi', panel: 'panel-kurasi' },
 ];
 
 function setTab(which) {
@@ -1966,11 +2058,15 @@ function renderRoads() {
     return;
   }
   const unloc = ROADS.total - ROADS.located;
+  let curated = 0;
+  for (const c of ROADS.classes) for (const r of c.roads) if (r.kurasi) curated++;
   roadNote.innerHTML =
     `Dari <b>${esc(ROADS.source)}</b> — ${ROADS.total} ruas. `
     + `Jalan lokal &amp; lingkungan tidak dimunculkan: ayat (8) dan (9) `
     + `mendelegasikannya ke Rencana Detail Tata Ruang yang belum dipublikasikan.`
-    + (unloc ? ` ${unloc} ruas tidak ada di OSM, jadi tidak bisa ditampilkan di peta.` : '');
+    + (unloc ? ` ${unloc} ruas tidak ada di OSM, jadi tidak bisa ditampilkan di peta.` : '')
+    + (curated ? ` ${curated} ruas badge kelasnya disesuaikan lewat kurasi Studio Atlas `
+      + `(bertanda “(kurasi)”; kelas Perda tetap jadi rujukan).` : '');
 
   let html = '';
   for (const c of ROADS.classes) {
@@ -1988,9 +2084,16 @@ function renderRoads() {
       const k = `${c.key}::${r.n}`;
       const isOn = selectedRoad === k;
       const dead = !r.segments || !r.segments.length;
+      // For a curated ruas, hover carries the provenance the badge cannot:
+      // which class the curator set, and on whose authority.
+      const tip = dead
+        ? 'Ruas ini tidak ada di OSM, jadi tidak bisa digambar di peta'
+        : (r.kurasi
+          ? `Kelas ${r.kurasi.class} (kurasi) — ${r.kurasi.reason} (${r.kurasi.source})`
+          : '');
       html += `<button class="road-row${isOn ? ' is-on' : ''}${dead ? ' is-dead' : ''}" type="button"
         data-key="${esc(k)}" data-name="${esc(r.name)}"
-        aria-pressed="${isOn}"${dead ? ' disabled title="Ruas ini tidak ada di OSM, jadi tidak bisa digambar di peta"' : ''}>
+        aria-pressed="${isOn}"${dead ? ' disabled' : ''}${tip ? ` title="${esc(tip)}"` : ''}>
         <span class="rr-name">${esc(r.name)}</span>
         <span class="rr-badge">${esc(r.badge)}</span>
       </button>`;
@@ -3378,6 +3481,233 @@ if (floodSearch) {
   });
 }
 
+/* ---------- kurasi (Studio Atlas) ---------- */
+/* Points contributed by curators through Studio Atlas (ensiklopedia-kota):
+   places the official registers and OpenStreetMap do not carry yet. One pin per
+   point, grouped by kelurahan. The card keeps the curator's reason and source
+   visible, because that is the whole difference between this layer and the
+   others -- every row here is an edit with a name attached, not a register. */
+
+const KURASI = window.DEPOK_KURASI || { source: '', counts: {}, list: [] };
+const kurasiTitle = document.getElementById('kurasi-title');
+const kurasiAllBox = document.getElementById('kurasi-all');
+const kurasiNote = document.getElementById('kurasi-note');
+const kurasiGroups = document.getElementById('kurasi-groups');
+const kurasiSearch = document.getElementById('kurasi-search');
+const kurasiEmpty = document.getElementById('kurasi-empty');
+const krDetail = document.getElementById('kurasi-detail');
+const krEyebrow = document.getElementById('kr-eyebrow');
+const krName = document.getElementById('kr-name');
+const krLadder = document.getElementById('kr-ladder');
+const krFacts = document.getElementById('kr-facts');
+const krSource = document.getElementById('kr-source');
+const krMin = document.getElementById('kr-min');
+let selectedKurasi = null;
+let showAllKurasi = false;
+
+function hasKurasiPin(k) {
+  return k.lon != null && k.lat != null && Number.isFinite(k.lon) && Number.isFinite(k.lat);
+}
+
+function kurasiFeature(k) {
+  return {
+    type: 'Feature',
+    geometry: { type: 'Point', coordinates: [k.lon, k.lat] },
+    properties: { name: k.name, key: k.key },
+  };
+}
+
+function renderKurasiCard(k) {
+  if (!k) { krDetail.hidden = true; return; }
+  krDetail.hidden = false;
+  krEyebrow.textContent = `${k.label || k.kind || 'Titik'} · kurasi`;
+  krName.textContent = k.name;
+
+  // Ladder: village -> district -> city, the same hierarchy as the other cards.
+  krLadder.innerHTML = '';
+  for (const [lvl, val] of [['Kelurahan', k.village], ['Kecamatan', k.district], ['Kota', 'Depok']]) {
+    if (!val) continue;
+    const row = document.createElement('div');
+    row.className = 'rung';
+    row.innerHTML = '<i class="dot"></i><span class="lvl"></span><span class="nm leg"></span>';
+    row.querySelector('.lvl').textContent = lvl;
+    row.querySelector('.nm').textContent = val;
+    krLadder.append(row);
+  }
+
+  // The two facts no other card has: why the point is there, and on whose
+  // authority. Without them the layer would read as a seventh register.
+  const facts = [];
+  if (k.kind) facts.push(['Jenis', esc(k.label || k.kind)]);
+  if (hasKurasiPin(k)) {
+    facts.push(['Koordinat', `${k.lat.toFixed(5)}, ${k.lon.toFixed(5)}`]);
+  }
+  if (k.reason) facts.push(['Alasan kurasi', esc(k.reason)]);
+  if (k.source) facts.push(['Sumber', esc(k.source)]);
+  facts.push(['Catatan', '<span class="muted">Titik suntingan kurator (Studio Atlas), '
+    + 'belum ada di sumber resmi maupun OpenStreetMap.</span>']);
+  krFacts.className = 'kids trans-facts';
+  krFacts.innerHTML = facts
+    .map(([key, v]) => `<div class="trans-fact"><dt>${key}</dt><dd>${v}</dd></div>`).join('');
+
+  krSource.textContent = KURASI.source || '';
+  const expanded = !document.body.classList.contains('card-collapsed');
+  krMin.setAttribute('aria-label', expanded ? 'Perkecil info' : 'Perluas info');
+  krMin.title = expanded ? 'Perkecil info' : 'Perluas info';
+}
+
+krMin.addEventListener('click', () => {
+  document.body.classList.toggle('card-collapsed');
+  relayoutOverlays();
+});
+
+/** Draw the selected kurasi point, zoom to it, and show its card. */
+function highlightKurasi(key) {
+  selectedKurasi = key;
+  if (!map.getSource(SRC_KURASI)) return;
+  const k = KURASI.list.find(x => x.key === key);
+  const src = map.getSource(SRC_KURASI);
+  if (!k) {
+    src.setData({ type: 'FeatureCollection', features: [] });
+    renderKurasiCard(null);
+    // Hand the screen back to the area card, the same way the other menus do.
+    card.hidden = false;
+    renderCard();
+    renderKurasi();
+    relayoutOverlays();
+    return;
+  }
+  if (hasKurasiPin(k)) {
+    src.setData({ type: 'FeatureCollection', features: [kurasiFeature(k)] });
+    map.flyTo({ center: [k.lon, k.lat], zoom: Math.max(map.getZoom(), 15), duration: 700 });
+  } else {
+    src.setData({ type: 'FeatureCollection', features: [] });
+  }
+  // Same stand-aside as the other detail cards: one slot, one card.
+  card.hidden = true;
+  hideDetailCards();
+  renderKurasiCard(k);
+  renderKurasi();
+  relayoutOverlays();
+}
+
+/** Show every kurasi point at once. Points, so this is cheap. */
+function toggleAllKurasi(on) {
+  showAllKurasi = !!on;
+  if (!map.getSource(SRC_KURASI_ALL)) return;
+  const src = map.getSource(SRC_KURASI_ALL);
+  if (!showAllKurasi) {
+    src.setData({ type: 'FeatureCollection', features: [] });
+    return;
+  }
+  const placed = KURASI.list.filter(hasKurasiPin);
+  src.setData({ type: 'FeatureCollection', features: placed.map(kurasiFeature) });
+  const lons = placed.map(k => k.lon), lats = placed.map(k => k.lat);
+  if (lons.length) {
+    map.fitBounds([[Math.min(...lons), Math.min(...lats)],
+      [Math.max(...lons), Math.max(...lats)]], {
+      padding: { top: 110, bottom: 220, left: 70, right: 70 },
+      maxZoom: 13, duration: 700,
+    });
+  }
+}
+kurasiAllBox.addEventListener('change', () => toggleAllKurasi(kurasiAllBox.checked));
+
+function renderKurasi(query) {
+  if (!kurasiGroups) return;
+  const q = (query == null ? (kurasiSearch ? kurasiSearch.value : '') : query)
+    .trim().toLowerCase();
+  const byVillage = new Map();
+  let shown = 0;
+  for (const k of KURASI.list) {
+    if (q && !(k.name.toLowerCase().includes(q)
+      || (k.kind || '').toLowerCase().includes(q)
+      || (k.label || '').toLowerCase().includes(q)
+      || (k.village || '').toLowerCase().includes(q)
+      || (k.district || '').toLowerCase().includes(q)
+      || (k.reason || '').toLowerCase().includes(q))) continue;
+    shown++;
+    const village = k.village || 'kelurahan tidak tercatat';
+    if (!byVillage.has(village)) byVillage.set(village, []);
+    byVillage.get(village).push(k);
+  }
+  const villages = Array.from(byVillage.entries())
+    .sort((a, b) => String(a[0]).localeCompare(String(b[0]), 'id'));
+
+  // A handful of points in one kecamatan: grouping by kelurahan keeps the list
+  // readable, unlike the kecamatan grouping the bigger registers use.
+  kurasiGroups.innerHTML = villages.map(([v, list]) => {
+    list.sort((a, b) => a.name.localeCompare(b.name, 'id'));
+    return `<div class="tg" data-open="1">
+      <button class="tg-head" type="button" aria-expanded="true">
+        <svg class="tg-chev" width="11" height="11" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="3" stroke-linecap="round"
+             stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+        <span class="tg-t">Kelurahan ${esc(v)}</span><span class="tg-n">${list.length}</span>
+      </button>
+      <div class="tg-body">${list.map(k => `
+        <button class="road-row${k.key === selectedKurasi ? ' is-sel' : ''}" type="button"
+                data-krkey="${esc(k.key)}">
+          <span class="rr-badge">${esc(k.label || k.kind || 'titik')}</span>
+          <span class="rr-name">${esc(k.name)}</span>
+        </button>`).join('')}
+      </div></div>`;
+  }).join('');
+
+  // A wrong query can legitimately match nothing; say so.
+  if (kurasiEmpty) kurasiEmpty.hidden = shown > 0;
+
+  // Count in the section head, like the other layers show it in their note.
+  const n = KURASI.list.length;
+  if (kurasiTitle) kurasiTitle.textContent = n ? `Kurasi (${n})` : 'Kurasi';
+
+  // Provenance: the note has to say what the layer is, and what an empty layer
+  // means (no curator edits exported yet -- not "no such places exist").
+  const byKind = (KURASI.counts && KURASI.counts.by_kind) || {};
+  const lab = {};
+  for (const k of KURASI.list) lab[k.kind] = k.label || k.kind;
+  const kinds = Object.entries(byKind)
+    .sort((a, b) => b[1] - a[1])
+    .map(([slug, v]) => `<b>${v}</b> ${esc((lab[slug] || slug).toLowerCase())}`).join(' · ');
+  kurasiNote.innerHTML = n
+    ? `<b>${n}</b> titik kurasi dari Studio Atlas (ensiklopedia-kota) — suntingan `
+      + `kurator untuk tempat yang belum ada di daftar resmi maupun OpenStreetMap`
+      + (kinds ? `: ${kinds}` : '') + `. Alasan dan sumber tiap titik ada di kartunya. `
+      + `Cari nama, jenis, atau kelurahan.`
+    : `Belum ada titik kurasi yang diekspor. Titik ditambahkan lewat `
+      + `<b>Studio Atlas</b> (ensiklopedia-kota, tab Ekspor).`;
+}
+
+if (kurasiGroups) {
+  kurasiGroups.addEventListener('click', e => {
+    const head = e.target.closest('.tg-head');
+    if (head) {
+      const g = head.closest('.tg');
+      g.dataset.open = g.dataset.open === '1' ? '0' : '1';
+      return;
+    }
+    const row = e.target.closest('[data-krkey]');
+    if (!row) return;
+    const key = row.dataset.krkey;
+    if (key === selectedKurasi) {
+      highlightKurasi(null);          // tapping the selection clears it
+    } else {
+      highlightKurasi(key);
+    }
+    if (window.matchMedia('(max-width: 760px)').matches) setSidebar(false);
+  });
+}
+
+if (kurasiSearch) {
+  kurasiSearch.addEventListener('input', () => renderKurasi(kurasiSearch.value));
+  kurasiSearch.addEventListener('keydown', e => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const first = kurasiGroups.querySelector('[data-krkey]');
+    if (first) first.click();
+  });
+}
+
 document.getElementById('transport-card-x')
   .addEventListener('click', () => highlightRoute(null));
 
@@ -3392,6 +3722,7 @@ renderSchools();
 renderPuskesmas();
 renderFaskes();
 renderFlood();
+renderKurasi();
 sideEl.hidden = true;
 /* Measure the attribution before the first overlay placement, so the card does
    not paint on top of the licence line and then jump. */
@@ -3416,5 +3747,5 @@ if (hash) {
 window.__depok = {
   map, state, KEL, KEC, rank, goCity, openDistrict, selectVillage, selectDistrict, applyTheme,
   setSidebar, setTab, renderAreaList, renderRoads, ROADS, PUSKESMAS, highlightPuskes,
-  FASKES, highlightFaskes, FLOOD, highlightFlood, setAreaSelect,
+  FASKES, highlightFaskes, FLOOD, highlightFlood, KURASI, highlightKurasi, setAreaSelect,
 };
