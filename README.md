@@ -483,6 +483,82 @@ cache; delete the files to force a refetch.
 as `src/data.js`. The build needs no Python packages beyond the standard
 library (the district scripts need Shapely; the road script does not).
 
+## Kurasi dari Studio Atlas
+
+Everything in this repo is reproducible from its sources except **curation**:
+corrections to a school's name, a clinic's kind, a road's class — and points
+that exist in no scraped dataset. Those arrive as `scripts/data/curated.json`,
+written by Studio Atlas (the `ensiklopedia-kota` repo, tab **Ekspor**) and
+never edited by hand here. The contract lives in `scripts/curated.py`, and both
+repos share it: the studio imports this module for its preview.
+
+```json
+{
+ "version": 1,
+ "pois": [
+  {"id": "titik-1", "op": "add", "layer": "kurasi",
+   "row": {"key": "titik-1", "name": "Taman …", "kind": "park", "label": "Taman",
+           "lat": -6.38, "lon": 106.72, "village": "Curug", "district": "Bojongsari"},
+   "reason": "…", "source": "…"},
+  {"id": "titik-2", "op": "set",    "layer": "faskes", "key": "node-…",
+   "set": {"kind": "Rumah sakit"}, "reason": "…", "source": "…"},
+  {"id": "titik-3", "op": "remove", "layer": "schools", "key": "…",
+   "reason": "…", "source": "…"}
+ ],
+ "roads": [
+  {"id": "jalan-1", "op": "set-class", "group": "arteri-primer", "n": "A1",
+   "match": "Cilodong Raya", "class": "lokal", "reason": "…", "source": "…"}
+ ]
+}
+```
+
+Rules worth knowing before touching that file:
+
+- **Additive and reversible.** Every patched row carries a `_kurasi`
+  provenance block (previous values, or `_kurasi.removed` at the document
+  level) and the payload header gains a marker line. Emptying the curation and
+  re-applying restores every payload byte-for-byte — dropping an edit never
+  leaves a fossil behind.
+- **Road classes are a badge override, never a re-grouping.** `set-class`
+  rewrites the badge to `Lokal (kurasi)` and keeps `badge_perda` beside it; the
+  77 ruas and the Perda's own grouping stay verbatim. Added points always land
+  in the map's *Kurasi* layer (`src/kurasi.js`), nowhere else.
+- **The studio resolves before writing.** An edit whose target has no
+  counterpart here is *skipped and reported* at export time (atlas-only
+  landmarks stay in the book); an *ambiguous* match blocks the export (422,
+  nothing written). Once an entry is in this file it must resolve — a missing
+  or ambiguous target at apply time is a hard error and no payload is written
+  partially.
+
+Apply (offline, idempotent):
+
+```bash
+python3 scripts/apply-curated.py            # rewrite the payloads where needed
+python3 scripts/apply-curated.py --check    # validate targets, write nothing
+```
+
+`src/schools.js`, `src/puskesmas.js`, `src/faskes.js` and `src/roads.js` are
+rewritten only when changed; `src/kurasi.js` is regenerated from the added
+points on every run (empty curation → empty payload, so the script tag never
+404s). Re-running with no curation change touches nothing, and the
+`build-*.py` scripts call the same hook, so a full rebuild keeps curation
+applied.
+
+**Publishing is manual.** Studio Atlas writes the file and runs the apply; it
+never commits or pushes. From here:
+
+```bash
+git add src/schools.js src/puskesmas.js src/faskes.js src/roads.js src/kurasi.js scripts/data/curated.json
+git commit -m "kurasi: ekspor Studio Atlas (N titik, M ruas)"
+git push origin main
+```
+
+Cloudflare Pages deploys on push. **Edition-loop warning:** after that deploy,
+the site payloads Studio Atlas *fetches* already contain the applied curation.
+Running `fetch` + `facts` again without reviewing the studio's curation list
+can double-apply the same edit — the studio's Ekspor tab repeats this warning
+at the point of export.
+
 ## Data
 
 | | |
