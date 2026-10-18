@@ -1,0 +1,6 @@
+{
+ "version": 1,
+ "note": "Berkas kurasi Studio Atlas (ensiklopedia-kota). Dihasilkan tab Ekspor di studio — jangan disunting tangan. Terapkan dengan: python3 scripts/apply-curated.py",
+ "pois": [],
+ "roads": []
+}
