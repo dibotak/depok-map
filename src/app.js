@@ -29,7 +29,7 @@ const META = DATA.meta;
 // district_code are both unique across their level, so they are the only safe
 // keys. `KEL_BY_NAME` is kept solely for search-result labels, and reads the
 // full list so duplicates can be shown separately.
-const KEL_BY_CODE = new Map(KEL.map(f => [f.properties.village_code, f, { key: 'school', panel: 'panel-school', tab: 'tab-school', note: null }]));
+const KEL_BY_CODE = new Map(KEL.map(f => [f.properties.village_code, f]));
 const KEL_BY_NAME = new Map();
 for (const f of KEL) {
   const n = f.properties.village;
@@ -82,8 +82,16 @@ const PALETTE = {
     // never read as a school, a puskesmas, or anything else.
     faskes: '#4d7c0f',
     flood: '#1d4ed8',
-    // Curator points (Studio Atlas) are fuchsia: the seventh family, close to
-    // no other accent on the map.
+    // The four categories built from OpenStreetMap in the same taxonomy as the
+    // Atlas Spasial (ensiklopedia-kota): each gets its own accent so a mosque,
+    // a market, a park and a police post never read as one another.
+    darurat: '#a16207',
+    ibadah: '#6b21a8',
+    dagang: '#9d174d',
+    ruang: '#0891b2',
+    // Curator points no longer paint their own map layer -- they carry their
+    // category's colour and a (kurasi) tag. The fuchsia survives as the card
+    // accent for a curated row, so an edit still reads as an edit.
     kurasi: '#a21caf',
   },
   dark: {
@@ -95,6 +103,10 @@ const PALETTE = {
     puskes: '#fb7185',
     faskes: '#a3e635',
     flood: '#60a5fa',
+    darurat: '#facc15',
+    ibadah: '#c084fc',
+    dagang: '#f9a8d4',
+    ruang: '#67e8f9',
     kurasi: '#e879f9',
   },
 };
@@ -123,22 +135,27 @@ const SRC_TRANS = 'rute';
    from the selected route so the two can be shown together -- the overlay is
    the context, the selected route is drawn on top of it. */
 const SRC_TRANS_ALL = 'rute-semua';
-/* Secondary schools, in two sources for the same reason the transport routes
-   are: the selected school's marker is the subject, the show-all layer is the
-   context underneath it. */
+/* Schools (every jenjang, plus kampus and curated education points), in two
+   sources for the same reason the transport routes are: the selected point's
+   marker is the subject, the show-all layer is the context underneath it. */
 const SRC_SCHOOL = 'sekolah-terpilih';
 const SRC_SCHOOL_ALL = 'sekolah-semua';
 const SRC_PUSKES = 'puskes-terpilih';
 const SRC_PUSKES_ALL = 'puskes-semua';
 const SRC_FASKES = 'faskes-terpilih';
 const SRC_FASKES_ALL = 'faskes-semua';
+/* Polisi & damkar (OSM) -- the "darurat" half of the Kesehatan & darurat
+   category. Its own family so a police post never reads as a clinic. */
+const SRC_DARURAT = 'darurat-terpilih';
+const SRC_DARURAT_ALL = 'darurat-semua';
+const SRC_IBADAH = 'ibadah-terpilih';
+const SRC_IBADAH_ALL = 'ibadah-semua';
+const SRC_DAGANG = 'dagang-terpilih';
+const SRC_DAGANG_ALL = 'dagang-semua';
+const SRC_RUANG = 'ruang-terpilih';
+const SRC_RUANG_ALL = 'ruang-semua';
 const SRC_FLOOD = 'banjir-terpilih';
 const SRC_FLOOD_ALL = 'banjir-semua';
-/* Curator points from Studio Atlas (ensiklopedia-kota), same two-source
-   shape again: the selected point is the subject, the show-all layer is the
-   context underneath it. */
-const SRC_KURASI = 'kurasi-terpilih';
-const SRC_KURASI_ALL = 'kurasi-semua';
 let mapReady = false;
 
 /**
@@ -238,12 +255,14 @@ function paint() {
     ['flood-sel', 'circle-stroke-color', p.halo],
     ['flood-sel-label', 'text-color', p.flood],
     ['flood-sel-label', 'text-halo-color', p.halo],
-    ['kurasi-all', 'circle-color', p.kurasi],
-    ['kurasi-all', 'circle-stroke-color', p.halo],
-    ['kurasi-sel', 'circle-color', p.kurasi],
-    ['kurasi-sel', 'circle-stroke-color', p.halo],
-    ['kurasi-sel-label', 'text-color', p.kurasi],
-    ['kurasi-sel-label', 'text-halo-color', p.halo],
+    ...['darurat', 'ibadah', 'dagang', 'ruang'].flatMap(fam => [
+      [`${fam}-all`, 'circle-color', p[fam]],
+      [`${fam}-all`, 'circle-stroke-color', p.halo],
+      [`${fam}-sel`, 'circle-color', p[fam]],
+      [`${fam}-sel`, 'circle-stroke-color', p.halo],
+      [`${fam}-sel-label`, 'text-color', p[fam]],
+      [`${fam}-sel-label`, 'text-halo-color', p.halo],
+    ]),
   ]) {
     if (map.getLayer(id)) map.setPaintProperty(id, prop, val);
   }
@@ -648,55 +667,66 @@ function addLayers() {
       },
     });
   }
-  // Curator points (Studio Atlas). Fuchsia — the seventh family, so a curated
-  // point never reads as any of the layers above it.
-  for (const id of [SRC_KURASI_ALL, SRC_KURASI]) {
-    if (!map.getSource(id)) {
-      map.addSource(id, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+  // The categories built from OpenStreetMap in the atlas taxonomy: polisi &
+  // damkar, tempat ibadah, perdagangan, ruang terbuka. They are the same three
+  // layers as the families above (context, selected marker, its label) in a
+  // different colour, so they are created from one loop rather than four more
+  // hand-written blocks.
+  for (const [sel, all, color] of [
+    [SRC_DARURAT, SRC_DARURAT_ALL, PALETTE[state.theme].darurat],
+    [SRC_IBADAH, SRC_IBADAH_ALL, PALETTE[state.theme].ibadah],
+    [SRC_DAGANG, SRC_DAGANG_ALL, PALETTE[state.theme].dagang],
+    [SRC_RUANG, SRC_RUANG_ALL, PALETTE[state.theme].ruang],
+  ]) {
+    for (const id of [all, sel]) {
+      if (!map.getSource(id)) {
+        map.addSource(id, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      }
     }
-  }
-  if (!map.getLayer('kurasi-all')) {
-    map.addLayer({
-      id: 'kurasi-all', type: 'circle', source: SRC_KURASI_ALL,
-      paint: {
-        'circle-radius': ['interpolate', ['linear'], ['zoom'],
-          11, 3, 13, 4.5, 16, 7],
-        'circle-color': PALETTE[state.theme].kurasi,
-        'circle-opacity': 0.62,
-        'circle-stroke-width': 1,
-        'circle-stroke-color': PALETTE[state.theme].halo,
-        'circle-stroke-opacity': 0.5,
-      },
-    });
-  }
-  if (!map.getLayer('kurasi-sel')) {
-    map.addLayer({
-      id: 'kurasi-sel', type: 'circle', source: SRC_KURASI,
-      paint: {
-        'circle-radius': ['interpolate', ['linear'], ['zoom'],
-          11, 5, 13, 8, 16, 12],
-        'circle-color': PALETTE[state.theme].kurasi,
-        'circle-stroke-width': 2.5,
-        'circle-stroke-color': PALETTE[state.theme].halo,
-      },
-    });
-    map.addLayer({
-      id: 'kurasi-sel-label', type: 'symbol', source: SRC_KURASI,
-      layout: {
-        'text-field': ['get', 'name'],
-        'text-size': 12,
-        'text-font': ['Noto Sans Regular'],
-        'text-anchor': 'top',
-        'text-offset': [0, 1.1],
-        'text-max-width': 14,
-        'text-allow-overlap': false,
-      },
-      paint: {
-        'text-color': PALETTE[state.theme].kurasi,
-        'text-halo-color': PALETTE[state.theme].halo,
-        'text-halo-width': 2,
-      },
-    });
+    const base = sel.replace('-terpilih', '');
+    if (!map.getLayer(`${base}-all`)) {
+      map.addLayer({
+        id: `${base}-all`, type: 'circle', source: all,
+        paint: {
+          'circle-radius': ['interpolate', ['linear'], ['zoom'],
+            11, 3, 13, 4.5, 16, 7],
+          'circle-color': color,
+          'circle-opacity': 0.62,
+          'circle-stroke-width': 1,
+          'circle-stroke-color': PALETTE[state.theme].halo,
+          'circle-stroke-opacity': 0.5,
+        },
+      });
+    }
+    if (!map.getLayer(`${base}-sel`)) {
+      map.addLayer({
+        id: `${base}-sel`, type: 'circle', source: sel,
+        paint: {
+          'circle-radius': ['interpolate', ['linear'], ['zoom'],
+            11, 5, 13, 8, 16, 12],
+          'circle-color': color,
+          'circle-stroke-width': 2.5,
+          'circle-stroke-color': PALETTE[state.theme].halo,
+        },
+      });
+      map.addLayer({
+        id: `${base}-sel-label`, type: 'symbol', source: sel,
+        layout: {
+          'text-field': ['get', 'name'],
+          'text-size': 12,
+          'text-font': ['Noto Sans Regular'],
+          'text-anchor': 'top',
+          'text-offset': [0, 1.1],
+          'text-max-width': 14,
+          'text-allow-overlap': false,
+        },
+        paint: {
+          'text-color': color,
+          'text-halo-color': PALETTE[state.theme].halo,
+          'text-halo-width': 2,
+        },
+      });
+    }
   }
   if (!map.getLayer('trans-sel')) {
     map.addLayer({
@@ -811,22 +841,20 @@ map.on('load', addLayers);
       kecamatan's children sit on top of their parent, so the kelurahan wins;
       a click on one of the other 10 switches to it directly, which is the
       same gesture as at city view. */
+/* Hit-testing order and the sidebar panel each family feeds. `select` is the
+   same global selectPoint() a sidebar row click calls: the row model knows
+   which card and which marker a key owns, so a pin click and a row click are
+   one code path. Order is topmost-first — the selected marker's label, then
+   the marker, then the context layer. */
 const PIN_FAMILIES = [
-  { layers: ['school-sel-label', 'school-sel', 'school-all'],
-    select: highlightSchool, tab: 'school', panel: 'school-groups',
-    attr: 'data-skey', ds: 'skey' },
-  { layers: ['puskes-sel-label', 'puskes-sel', 'puskes-all'],
-    select: highlightPuskes, tab: 'puskes', panel: 'puskes-groups',
-    attr: 'data-pkey', ds: 'pkey' },
-  { layers: ['faskes-sel-label', 'faskes-sel', 'faskes-all'],
-    select: highlightFaskes, tab: 'faskes', panel: 'faskes-groups',
-    attr: 'data-fkey', ds: 'fkey' },
-  { layers: ['kurasi-sel-label', 'kurasi-sel', 'kurasi-all'],
-    select: highlightKurasi, tab: 'kurasi', panel: 'kurasi-groups',
-    attr: 'data-krkey', ds: 'krkey' },
-  { layers: ['flood-sel-label', 'flood-sel', 'flood-all'],
-    select: highlightFlood, tab: 'flood', panel: 'flood-groups',
-    attr: 'data-flkey', ds: 'flkey' },
+  { layers: ['school-sel-label', 'school-sel', 'school-all'], panel: 'pendidikan' },
+  { layers: ['puskes-sel-label', 'puskes-sel', 'puskes-all'], panel: 'kesehatan' },
+  { layers: ['faskes-sel-label', 'faskes-sel', 'faskes-all'], panel: 'kesehatan' },
+  { layers: ['darurat-sel-label', 'darurat-sel', 'darurat-all'], panel: 'kesehatan' },
+  { layers: ['ibadah-sel-label', 'ibadah-sel', 'ibadah-all'], panel: 'ibadah' },
+  { layers: ['dagang-sel-label', 'dagang-sel', 'dagang-all'], panel: 'dagang' },
+  { layers: ['ruang-sel-label', 'ruang-sel', 'ruang-all'], panel: 'ruang' },
+  { layers: ['flood-sel-label', 'flood-sel', 'flood-all'], panel: 'lainnya' },
 ];
 
 map.on('click', e => {
@@ -839,7 +867,7 @@ map.on('click', e => {
     if (!hit.length) continue;
     const key = hit[0].properties && hit[0].properties.key;
     if (key == null) continue;
-    fam.select(key);
+    selectPoint(key);
     revealSelection(fam, key);
     return;
   }
@@ -861,16 +889,34 @@ map.on('click', e => {
  *  the matching list and scroll its row into view, so the selection reads in
  *  the panel the same way the pin reads on the map. Skipped while the panel
  *  is closed — the card is the feedback there, and forcing the panel open
- *  would cover the map the click just used. */
+ *  would cover the map the click just used. A lazy panel (Pendidikan) opens
+ *  the row's group first, or the row would not exist to scroll to. */
 function revealSelection(fam, key) {
   if (sideEl.hidden) return;
-  setTab(fam.tab);
-  for (const row of document.querySelectorAll(`#${fam.panel} [${fam.attr}]`)) {
-    if (row.dataset[fam.ds] === key) {
-      row.scrollIntoView({ block: 'nearest' });
-      return;
+  const p = PANELS[fam.panel];
+  if (!p) return;
+  // setTab() keys on the section id ("pendidikan"), not the head element's id
+  // ("tab-pendidikan") -- passing the latter would match no tab and close all.
+  setTab(fam.panel);
+  const groups = document.getElementById(p.groups);
+  if (!groups) return;
+  let row = rowElement(p, key);
+  if (!row && p.lazy) {
+    const hit = ROWS.get(key);
+    if (hit) {
+      openGroup(p, hit.group);
+      renderPanel(fam.panel);
+      row = rowElement(p, key);
     }
   }
+  if (row) row.scrollIntoView({ block: 'nearest' });
+}
+
+function rowElement(p, key) {
+  for (const row of document.querySelectorAll(`#${p.groups} [${p.attr}]`)) {
+    if (row.dataset[p.ds] === key) return row;
+  }
+  return null;
 }
 
 /* Pointer cursor while something clickable is under the pointer: the point
@@ -975,36 +1021,27 @@ function selectVillage(code, opts = {}) {
 function clearSubCards() {
   hideDetailCards();
   selectedRoute = null;
-  selectedSchool = null;
-  selectedPuskes = null;
-  selectedFaskes = null;
-  selectedFlood = null;
-  selectedKurasi = null;
-  // Drop the markers too, or a stale pin stays on the map with no card for it.
-  const rt = map.getSource(SRC_TRANS), sr = map.getSource(SRC_SCHOOL);
-  const pr = map.getSource(SRC_PUSKES);
-  const fr = map.getSource(SRC_FASKES), fl = map.getSource(SRC_FLOOD);
-  const kr = map.getSource(SRC_KURASI);
+  // One global point selection replaced the per-layer `selected*` variables:
+  // a category panel can hold rows from three sources, and a kurasi row can
+  // belong to any of them, so "what is selected" is keyed by row, not layer.
+  clearPointSelections();
+  // Drop the marker too, or a stale pin stays on the map with no card for it.
+  const rt = map.getSource(SRC_TRANS);
   if (rt) rt.setData({ type: 'FeatureCollection', features: [] });
-  if (sr) sr.setData({ type: 'FeatureCollection', features: [] });
-  if (pr) pr.setData({ type: 'FeatureCollection', features: [] });
-  if (fr) fr.setData({ type: 'FeatureCollection', features: [] });
-  if (fl) fl.setData({ type: 'FeatureCollection', features: [] });
-  if (kr) kr.setData({ type: 'FeatureCollection', features: [] });
   card.hidden = false;
 }
 
-/** One detail slot, six possible cards. Opening any of them hides the other
- *  five first, or two .cards would paint on top of each other in the same
- *  fixed slot. The deselect paths inside each highlight*() still call their
- *  own render*Card(null) directly. */
+/** One detail slot, five possible cards (the POI card serves the four OSM
+ *  categories and every curated row). Opening any of them hides the others
+ *  first, or two .cards would paint on top of each other in the same fixed
+ *  slot. */
 function hideDetailCards() {
   renderRouteCard(null);
   renderSchoolCard(null);
   renderPuskesCard(null);
   renderFaskesCard(null);
+  renderPoiCard(null);
   renderFloodCard(null);
-  renderKurasiCard(null);
 }
 
 function selectDistrict(name, opts = {}) {
@@ -1406,6 +1443,13 @@ function applyTheme(next) {
   // declared further down and would be in the TDZ here.
   if (!roadCard.hidden) roadCard.style.setProperty('--road-c', PALETTE[next].road);
   if (!transportCard.hidden) transportCard.style.setProperty('--road-c', PALETTE[next].trans);
+  // The POI card is shared by four categories and the curated rows, so it takes
+  // its accent from the selected row and sets it inline; re-derive it here, or
+  // a theme flip with that card open would leave the old theme's colour.
+  if (selected && !pdDetail.hidden) {
+    pdDetail.style.setProperty('--road-c', selected.kurasi
+      ? PALETTE[next].kurasi : (PALETTE[next][ACCENT_OF[selected.src]] || ''));
+  }
   // Optional: absent meta must not abort the rest of the theme swap. It is last
   // precisely because it is the one line that can throw on a page that omits the
   // tag, and everything above it (including the banner recolour) is what matters.
@@ -1481,22 +1525,6 @@ function restoreLayers() {
         map.getSource(SRC_TRANS).setData(transportFeatures(r));
       }
     }
-    if (selectedSchool) {
-      const sc = SCHOOLS.schools.find(x => x.key === selectedSchool);
-      if (sc) {
-        map.getSource(SRC_SCHOOL).setData(
-          { type: 'FeatureCollection', features: [schoolFeature(sc)] });
-      }
-    }
-    if (showAllSchools) {
-      const ss = map.getSource(SRC_SCHOOL_ALL);
-      if (ss) {
-        ss.setData({
-          type: 'FeatureCollection',
-          features: SCHOOLS.schools.map(schoolFeature),
-        });
-      }
-    }
     if (showAllAngkot) {
       const src = map.getSource(SRC_TRANS_ALL);
       if (src) {
@@ -1505,53 +1533,11 @@ function restoreLayers() {
         src.setData({ type: 'FeatureCollection', features: feats });
       }
     }
-    // Same again for the health and flood layers: their selected pins and
-    // show-all overlays are dropped by setStyle() too.
-    if (selectedFaskes) {
-      const fk = FASKES.list.find(x => x.key === selectedFaskes);
-      if (fk && hasFaskesPin(fk)) {
-        map.getSource(SRC_FASKES).setData(
-          { type: 'FeatureCollection', features: [faskesFeature(fk)] });
-      }
-    }
-    if (showAllFaskes) {
-      const fs = map.getSource(SRC_FASKES_ALL);
-      if (fs) {
-        fs.setData({
-          type: 'FeatureCollection',
-          features: FASKES.list.filter(hasFaskesPin).map(faskesFeature),
-        });
-      }
-    }
-    if (selectedFlood) {
-      const fl = FLOOD.list.find(x => x.key === selectedFlood);
-      if (fl) {
-        map.getSource(SRC_FLOOD).setData(
-          { type: 'FeatureCollection', features: [floodFeature(fl)] });
-      }
-    }
-    if (showAllFlood) {
-      const fs = map.getSource(SRC_FLOOD_ALL);
-      if (fs) {
-        fs.setData({ type: 'FeatureCollection', features: FLOOD.list.map(floodFeature) });
-      }
-    }
-    if (selectedKurasi) {
-      const kr = KURASI.list.find(x => x.key === selectedKurasi);
-      const src = map.getSource(SRC_KURASI);
-      if (kr && src) {
-        src.setData({ type: 'FeatureCollection', features: [kurasiFeature(kr)] });
-      }
-    }
-    if (showAllKurasi) {
-      const ks = map.getSource(SRC_KURASI_ALL);
-      if (ks) {
-        ks.setData({
-          type: 'FeatureCollection',
-          features: KURASI.list.filter(hasKurasiPin).map(kurasiFeature),
-        });
-      }
-    }
+    // Same again for every point category: setStyle() drops both the selected
+    // marker and the show-all overlay, and both are re-pushed from the row
+    // model -- one global selection, one on/off switch per panel.
+    if (selected) pushSelected();
+    for (const id of Object.keys(PANELS)) if (showAll[id]) fillPanelAll(id);
     stop();
   };
 
@@ -1866,7 +1852,7 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && !sideEl.hidden) setSidebar(false);
 });
 
-/* Accordion, not tabs. The four sections are stacked collapsible headers:
+/* Accordion, not tabs. The nine sections are stacked collapsible headers:
  * opening one closes the others, and tapping the open header collapses it, so
  * all-closed is a legal state. Same element ids as the tab strip it replaced --
  * tab-* is now the section header, panel-* its collapsible body -- so nothing
@@ -1875,11 +1861,12 @@ const TABS = [
   { id: 'area', tab: 'tab-area', panel: 'panel-area' },
   { id: 'road', tab: 'tab-road', panel: 'panel-road' },
   { id: 'transport', tab: 'tab-transport', panel: 'panel-transport' },
-  { id: 'school', tab: 'tab-school', panel: 'panel-school' },
-  { id: 'puskes', tab: 'tab-puskes', panel: 'panel-puskes' },
-  { id: 'faskes', tab: 'tab-faskes', panel: 'panel-faskes' },
-  { id: 'flood', tab: 'tab-flood', panel: 'panel-flood' },
-  { id: 'kurasi', tab: 'tab-kurasi', panel: 'panel-kurasi' },
+  { id: 'pendidikan', tab: 'tab-pendidikan', panel: 'panel-pendidikan' },
+  { id: 'kesehatan', tab: 'tab-kesehatan', panel: 'panel-kesehatan' },
+  { id: 'ibadah', tab: 'tab-ibadah', panel: 'panel-ibadah' },
+  { id: 'dagang', tab: 'tab-dagang', panel: 'panel-dagang' },
+  { id: 'ruang', tab: 'tab-ruang', panel: 'panel-ruang' },
+  { id: 'lainnya', tab: 'tab-lainnya', panel: 'panel-lainnya' },
 ];
 
 function setTab(which) {
@@ -2452,48 +2439,179 @@ function toggleAllAngkot(on) {
   }
 }
 
-/* ---------- secondary schools (SMA/SMK/MA) ---------- */
-/* Same three pieces as the transport layer: a list, a selected marker with a
-   detail card, and a show-all overlay. Kept separate rather than merged into
-   one generic "points" feature because the two have different provenance --
-   schools come from OSM places, routes come from OSM relations plus Dishub. */
+/* ---------- titik kategori: satu model baris, enam panel ---------- */
+/* The sidebar's point sections are the five Atlas Spasial categories --
+   Pendidikan, Kesehatan & darurat, Tempat ibadah, Perdagangan, Ruang terbuka
+   -- plus Lainnya, which is where the flood reports live. Every point that
+   reaches any of them, whatever payload it came from, is normalised into one
+   row model:
 
-const SCHOOLS = window.DEPOK_SCHOOLS || { schools: [], counts: {} };
-const schoolAllBox = document.getElementById('school-all');
-const schoolNote = document.getElementById('school-note');
-const schoolGroups = document.getElementById('school-groups');
-const schoolSearch = document.getElementById('school-search');
-const schoolEmpty = document.getElementById('school-empty');
-let selectedSchool = null;
-let showAllSchools = false;
+     { key, name, badge, group, chips, hay, panel, src, kind, data }
 
-const SCHOOL_ORDER = ['SMA Negeri', 'SMA Swasta', 'SMK Negeri', 'SMK Swasta',
-  'Madrasah Aliyah Negeri', 'Madrasah Aliyah Swasta'];
+   collected in ROWS (by key) and PANEL_ROWS (by panel). A panel is then one
+   renderer over one list: the search box, the empty state, selection and the
+   counts in the note are shared. A kurasi point dropped into a category
+   behaves like a register row in every way -- list, pin, show-all, card --
+   and only its `(kurasi)` chip and card facts say that it is an edit.
 
-// Only schools with a real point can become a feature. The official register
-// lists 244 schools and OSM has a point for well under half of them, so most
-// records here legitimately have lon/lat null -- those stay in the list and the
-// detail card, marked "belum ada titik", and are skipped on the map. Emitting
-// them as [null, null] would make GeoJSON invalid and break fitBounds.
-function hasPoint(s) {
-  return s.lon != null && s.lat != null && Number.isFinite(s.lon) && Number.isFinite(s.lat);
+   `src` is the map family a row is drawn in (school, puskes, faskes, darurat,
+   ibadah, dagang, ruang, flood); one category can hold several families --
+   Kesehatan & darurat holds three. `kind` keeps the atlas taxonomy's slug
+   for curated points (school, place_of_worship, university, ...), so a
+   curated point and an OSM row in the same category speak one language. */
+
+const SCHOOLS = window.DEPOK_SCHOOLS || { source: '', counts: {}, schools: [] };
+const PUSKESMAS = window.DEPOK_PUSKESMAS || { source: '', counts: {}, list: [] };
+const FASKES = window.DEPOK_FASKES || { source: '', counts: {}, list: [] };
+const POI = window.DEPOK_POI || { source: '', counts: {}, list: [] };
+const KURASI = window.DEPOK_KURASI || { source: '', counts: {}, list: [] };
+const FLOOD = window.DEPOK_FLOOD
+  || { source: '', list: [], scanned: {}, screening: {}, counts: {} };
+
+/* Panel registry: element ids and list behaviour. `lazy` is Pendidikan's
+   answer to 2,871 rows -- a group's body is only built when it is open (or
+   while a search filters it); the other panels render whole, which is what
+   they always did. `openDefault: false` starts Pendidikan's groups closed. */
+const PANELS = {
+  pendidikan: {
+    tab: 'tab-pendidikan', groups: 'pendidikan-groups', all: 'pendidikan-all',
+    search: 'pendidikan-search', empty: 'pendidikan-empty',
+    note: 'pendidikan-note', attr: 'data-edu', ds: 'edu',
+    openDefault: false, lazy: true,
+  },
+  kesehatan: {
+    tab: 'tab-kesehatan', groups: 'kesehatan-groups', all: 'kesehatan-all',
+    search: 'kesehatan-search', empty: 'kesehatan-empty',
+    note: 'kesehatan-note', attr: 'data-kes', ds: 'kes',
+    openDefault: true, lazy: false,
+  },
+  ibadah: {
+    tab: 'tab-ibadah', groups: 'ibadah-groups', all: 'ibadah-all',
+    search: 'ibadah-search', empty: 'ibadah-empty',
+    note: 'ibadah-note', attr: 'data-ibd', ds: 'ibd',
+    openDefault: true, lazy: false,
+  },
+  dagang: {
+    tab: 'tab-dagang', groups: 'dagang-groups', all: 'dagang-all',
+    search: 'dagang-search', empty: 'dagang-empty',
+    note: 'dagang-note', attr: 'data-dgg', ds: 'dgg',
+    openDefault: true, lazy: false,
+  },
+  ruang: {
+    tab: 'tab-ruang', groups: 'ruang-groups', all: 'ruang-all',
+    search: 'ruang-search', empty: 'ruang-empty',
+    note: 'ruang-note', attr: 'data-rng', ds: 'rng',
+    openDefault: true, lazy: false,
+  },
+  lainnya: {
+    tab: 'tab-lainnya', groups: 'lainnya-groups', all: 'lainnya-all',
+    search: 'lainnya-search', empty: 'lainnya-empty',
+    note: 'lainnya-note', attr: 'data-flk', ds: 'flk',
+    openDefault: true, lazy: false,
+  },
+};
+// Groups the reader flipped away from their default state (collapsed in the
+// open-by-default panels, opened in Pendidikan).
+for (const p of Object.values(PANELS)) p.open = new Set();
+
+/* Pendidikan groups by jenjang family, in this order; kampus and curated
+   points come after the register's families because they are not part of it.
+   The other panels group by kecamatan, with the same two trailing groups. */
+const FAMILY_ORDER = ['PAUD/TK', 'SD/MI', 'SMP/MTs', 'SMA/SMK/MA', 'SLB',
+  'Kursus & PKBM', 'Kampus', 'Kurasi'];
+const KURASI_GROUP = 'Kurasi';
+const UNKNOWN_GROUP = 'kecamatan tidak tercatat';
+
+function groupRank(panelId, g) {
+  if (panelId === 'pendidikan') {
+    const i = FAMILY_ORDER.indexOf(g);
+    return i < 0 ? FAMILY_ORDER.length : i;
+  }
+  // Kecamatan groups read A-Z; the uncategorised rows go last, and the Kurasi
+  // group after everything -- its points may sit in any kecamatan.
+  if (g === KURASI_GROUP) return 2;
+  if (g === UNKNOWN_GROUP) return 1;
+  return 0;
 }
 
-function schoolFeature(s) {
-  return {
-    type: 'Feature',
-    geometry: { type: 'Point', coordinates: [s.lon, s.lat] },
-    properties: {
-      name: s.name, label: s.label, key: s.key,
-      website: s.website || '', phone: s.phone || '',
-    },
-  };
+function groupSort(panelId, a, b) {
+  const ra = groupRank(panelId, a), rb = groupRank(panelId, b);
+  if (ra !== rb) return ra - rb;
+  if (panelId === 'pendidikan') return 0;
+  return String(a).localeCompare(String(b), 'id');
 }
 
-/** Which village and district a school sits in, by point-in-polygon.
+function groupLabel(panelId, g) {
+  if (panelId === 'pendidikan') return g;
+  if (g === KURASI_GROUP) return 'Titik kurasi';
+  if (g === UNKNOWN_GROUP) return 'Kecamatan tidak tercatat';
+  return `Kecamatan ${g}`;
+}
+
+/* Atlas kind -> map family. The kinds are the atlas's own slugs (see
+   ensiklopedia-kota tools/mapkit.py); the families are this app's layers. */
+const SRC_OF_KIND = {
+  school: 'school', kindergarten: 'school', school_khusus: 'school',
+  university: 'school', college: 'school',
+  puskesmas: 'puskes',
+  hospital: 'faskes', clinic: 'faskes', doctors: 'faskes',
+  dentist: 'faskes', pharmacy: 'faskes',
+  police: 'darurat', fire_station: 'darurat',
+  place_of_worship: 'ibadah',
+  marketplace: 'dagang', bank: 'dagang', perdagangan: 'dagang', shop: 'dagang',
+  park: 'ruang', fasilitas_olahraga: 'ruang', kuburan: 'ruang',
+};
+/* Kind -> category, for a legacy curated file that predates the category
+   field (see scripts/curated.py, which derives and writes it now). */
+const CATEGORY_OF_KIND = {
+  school: 'pendidikan', kindergarten: 'pendidikan', school_khusus: 'pendidikan',
+  university: 'pendidikan', college: 'pendidikan',
+  puskesmas: 'kesehatan-darurat', hospital: 'kesehatan-darurat',
+  clinic: 'kesehatan-darurat', doctors: 'kesehatan-darurat',
+  dentist: 'kesehatan-darurat', pharmacy: 'kesehatan-darurat',
+  police: 'kesehatan-darurat', fire_station: 'kesehatan-darurat',
+  place_of_worship: 'tempat-ibadah',
+  marketplace: 'perdagangan', bank: 'perdagangan', perdagangan: 'perdagangan',
+  shop: 'perdagangan',
+  park: 'ruang-terbuka', fasilitas_olahraga: 'ruang-terbuka',
+  kuburan: 'ruang-terbuka',
+};
+const PANEL_OF_CATEGORY = {
+  pendidikan: 'pendidikan', 'kesehatan-darurat': 'kesehatan',
+  'tempat-ibadah': 'ibadah', perdagangan: 'dagang', 'ruang-terbuka': 'ruang',
+};
+
+/* Map family -> its two sources (selected marker, show-all context), and
+   panel -> the families it draws. The health panel is the only one with
+   more than one. */
+const SRC_PAIR = {
+  school: [SRC_SCHOOL, SRC_SCHOOL_ALL],
+  puskes: [SRC_PUSKES, SRC_PUSKES_ALL],
+  faskes: [SRC_FASKES, SRC_FASKES_ALL],
+  darurat: [SRC_DARURAT, SRC_DARURAT_ALL],
+  ibadah: [SRC_IBADAH, SRC_IBADAH_ALL],
+  dagang: [SRC_DAGANG, SRC_DAGANG_ALL],
+  ruang: [SRC_RUANG, SRC_RUANG_ALL],
+  flood: [SRC_FLOOD, SRC_FLOOD_ALL],
+};
+const PANEL_SRC = {
+  pendidikan: ['school'],
+  kesehatan: ['puskes', 'faskes', 'darurat'],
+  ibadah: ['ibadah'],
+  dagang: ['dagang'],
+  ruang: ['ruang'],
+  lainnya: ['flood'],
+};
+
+function hasPin(r) {
+  return r.lon != null && r.lat != null && Number.isFinite(r.lon) && Number.isFinite(r.lat);
+}
+
+/** Which village and district a point sits in, by point-in-polygon.
  *
- *  Schools are points, so unlike a route corridor they really do belong to one
- *  village -- this is exact, not an approximation. */
+ *  Points are exact, unlike a route corridor: they really do belong to one
+ *  village. Used for the puskesmas rows whose register coordinates arrive
+ *  without a village, and by the school card. */
 function placeForSchool(lon, lat) {
   if (lon == null || lat == null) return null;
   for (const f of KEL) {
@@ -2513,6 +2631,245 @@ function placeForSchool(lon, lat) {
   return null;
 }
 
+function schoolFeature(s) {
+  return {
+    type: 'Feature',
+    geometry: { type: 'Point', coordinates: [s.lon, s.lat] },
+    properties: {
+      name: s.name, label: s.label, key: s.key,
+      website: s.website || '', phone: s.phone || '',
+    },
+  };
+}
+
+function floodFeature(p) {
+  const place = p.village || p.district || 'Kota Depok';
+  return {
+    type: 'Feature',
+    geometry: { type: 'Point', coordinates: [p.lon, p.lat] },
+    properties: { name: place, label: 'Banjir · ' + place, key: p.key },
+  };
+}
+
+/** GeoJSON point for a row, in the property shape its family's layers read. */
+function featureOf(row) {
+  const d = row.data;
+  if (row.src === 'school') return schoolFeature(d);
+  if (row.src === 'flood') return floodFeature(d);
+  return {
+    type: 'Feature',
+    geometry: { type: 'Point', coordinates: [d.lon, d.lat] },
+    properties: { name: d.name, key: d.key },
+  };
+}
+
+/* ---------- the row model ---------- */
+
+const ROWS = new Map();
+const PANEL_ROWS = {};
+for (const id of Object.keys(PANELS)) PANEL_ROWS[id] = [];
+
+function addRow(row) {
+  if (!row.key || ROWS.has(row.key)) return;
+  ROWS.set(row.key, row);
+  PANEL_ROWS[row.panel].push(row);
+}
+
+const chip = (cls, text, title) =>
+  `<span class="${cls}"${title ? ` title="${esc(title)}"` : ''}>${esc(text)}</span>`;
+const noPin = (title) => chip('rr-nopt', 'no pin', title);
+const kurasiChip = () =>
+  '<span class="rr-kurasi" title="suntingan kurator (Studio Atlas)">kurasi</span>';
+
+// Schools: the register rows, every jenjang, grouped by family. Rows without a
+// coordinate stay in the list and the card, marked "no pin", and are skipped
+// on the map -- emitting them as [null, null] would break fitBounds.
+for (const s of SCHOOLS.schools) {
+  addRow({
+    key: s.key, name: s.name, badge: s.jenjang || 'Sekolah',
+    group: s.family || 'Sekolah lain',
+    chips: [hasPin(s) ? '' : noPin(s.note || 'belum ada koordinat di sumber')],
+    panel: 'pendidikan', src: 'school', kind: 'school', kurasi: false,
+    hay: (`${s.name} ${s.npsn || ''} ${s.jenjang || ''} ${s.label || ''} `
+      + `${s.village || ''} ${s.district || ''} ${s.family || ''}`).toLowerCase(),
+    data: s,
+  });
+}
+
+// Puskesmas: village by point-in-polygon where the register has no kelurahan,
+// run once here so grouping does not recompute it per render.
+for (const p of PUSKESMAS.list) {
+  if (!hasPin(p)) continue;
+  const place = placeForSchool(p.lon, p.lat);
+  if (place) {
+    if (!p.district) p.district = place.district;
+    p.village = place.village;
+  }
+}
+for (const p of PUSKESMAS.list) {
+  addRow({
+    key: p.key, name: p.name.replace(/^UPTD /, ''),
+    badge: p.kind === 'kelurahan' ? 'kel' : p.kind === 'pembantu' ? 'pemb' : 'UPTD',
+    group: p.district || UNKNOWN_GROUP,
+    chips: [
+      p.open24 ? chip('rr-ref', '24', 'melayani 24 jam (Dinkes 2025)') : '',
+      hasPin(p) ? '' : noPin('belum ada pin di OpenStreetMap'),
+    ],
+    panel: 'kesehatan', src: 'puskes', kind: 'puskesmas', kurasi: false,
+    hay: `${p.name} ${p.kind || ''} ${p.village || ''} ${p.district || ''}`.toLowerCase(),
+    data: p,
+  });
+}
+
+// Faskes: the OSM complement to the Dinkes register.
+const FASKES_BADGE = {
+  'Rumah sakit': 'RS', 'Klinik': 'Klinik', 'Apotek': 'Apotek', 'Dokter gigi': 'Gigi',
+};
+for (const f of FASKES.list) {
+  addRow({
+    key: f.key, name: f.name, badge: FASKES_BADGE[f.kind] || f.kind || 'Faskes',
+    group: f.district || UNKNOWN_GROUP, chips: [],
+    panel: 'kesehatan', src: 'faskes', kind: 'faskes', kurasi: false,
+    hay: `${f.name} ${f.kind || ''} ${f.village || ''} ${f.district || ''}`.toLowerCase(),
+    data: f,
+  });
+}
+
+// The four OSM categories. Kampus is the only row set here that the sidebar
+// groups by kind rather than kecamatan: 36 rows of one kind each, and it sits
+// with the school families where a reader looks for it.
+for (const p of POI.list) {
+  const panel = PANEL_OF_CATEGORY[p.category] || 'ruang';
+  addRow({
+    key: p.key, name: p.name, badge: p.badge || p.label || p.kind,
+    group: panel === 'pendidikan' ? 'Kampus' : (p.district || UNKNOWN_GROUP),
+    chips: [],
+    panel, src: SRC_OF_KIND[p.kind] || 'ruang', kind: p.kind, kurasi: false,
+    hay: (`${p.name} ${p.label || ''} ${p.kind || ''} ${p.subkind || ''} `
+      + `${p.religion_name || ''} ${p.operator || ''} ${p.village || ''} `
+      + `${p.district || ''}`).toLowerCase(),
+    data: p,
+  });
+}
+
+// Curated points: one trailing group per category panel, so the register
+// rows stay together and the edits stay findable.
+for (const k of KURASI.list) {
+  const cat = k.category || CATEGORY_OF_KIND[k.kind] || '';
+  const panel = PANEL_OF_CATEGORY[cat] || 'pendidikan';
+  addRow({
+    key: k.key, name: k.name, badge: k.label || k.kind || 'titik',
+    group: KURASI_GROUP, chips: [kurasiChip()],
+    panel, src: SRC_OF_KIND[k.kind] || PANEL_SRC[panel][0], kind: k.kind,
+    kurasi: true,
+    hay: (`${k.name} ${k.label || ''} ${k.kind || ''} ${k.reason || ''} `
+      + `${k.village || ''} ${k.district || ''}`).toLowerCase(),
+    data: k,
+  });
+}
+
+// Flood reports (PetaBencana.id), the whole of Lainnya. One pin per report
+// location; the full screening log lives in scripts/data/flood-history.json.
+const ID_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun',
+  'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+
+/** "2026-04-30" -> "30 Apr 2026". Dates leave the build script as ISO; the
+ *  sidebar reads Indonesian. */
+function idDate(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || '');
+  return m ? `${+m[3]} ${ID_MONTHS[+m[2] - 1]} ${m[1]}` : (iso || '');
+}
+
+for (const p of FLOOD.list) {
+  const latest = p.reports && p.reports.length ? p.reports[0] : { text: '' };
+  addRow({
+    key: p.key, name: p.village || p.district || 'Kota Depok',
+    badge: p.max_depth_cm != null ? `${p.max_depth_cm} cm` : 'banjir',
+    group: p.district || UNKNOWN_GROUP,
+    chips: [chip('rr-ref', idDate(p.last_date))],
+    panel: 'lainnya', src: 'flood', kind: 'flood', kurasi: false,
+    hay: `${latest.text || ''} ${p.village || ''} ${p.district || ''}`.toLowerCase(),
+    data: p,
+  });
+}
+
+/* ---------- detail cards ---------- */
+/* One card per provenance, because the cards say different things: the school
+   card carries NPSN and the portal's own label, the puskesmas card the Dinkes
+   schedule, the faskes card its OSM kind. The POI card serves the four OSM
+   categories and every curated row -- a curated point's card only adds what
+   makes it an edit. */
+
+const pkDetail = document.getElementById('puskes-detail');
+const pkEyebrow = document.getElementById('pk-eyebrow');
+const pkName = document.getElementById('pk-name');
+const pkLadder = document.getElementById('pk-ladder');
+const pkFacts = document.getElementById('pk-facts');
+const pkSource = document.getElementById('pk-source');
+const pkMin = document.getElementById('pk-min');
+const fkDetail = document.getElementById('faskes-detail');
+const fkEyebrow = document.getElementById('fk-eyebrow');
+const fkName = document.getElementById('fk-name');
+const fkLadder = document.getElementById('fk-ladder');
+const fkFacts = document.getElementById('fk-facts');
+const fkSource = document.getElementById('fk-source');
+const fkMin = document.getElementById('fk-min');
+const pdDetail = document.getElementById('poi-detail');
+const pdEyebrow = document.getElementById('pd-eyebrow');
+const pdName = document.getElementById('pd-name');
+const pdLadder = document.getElementById('pd-ladder');
+const pdFacts = document.getElementById('pd-facts');
+const pdSource = document.getElementById('pd-source');
+const pdMin = document.getElementById('pd-min');
+const flDetail = document.getElementById('flood-detail');
+const flEyebrow = document.getElementById('fl-eyebrow');
+const flName = document.getElementById('fl-name');
+const flLadder = document.getElementById('fl-ladder');
+const flFacts = document.getElementById('fl-facts');
+const flSource = document.getElementById('fl-source');
+const flMin = document.getElementById('fl-min');
+
+/** Village -> district -> city ladder, the hierarchy every card shares. */
+function renderLadder(el, data) {
+  el.innerHTML = '';
+  for (const [lvl, val] of [['Kelurahan', data.village], ['Kecamatan', data.district],
+    ['Kota', 'Depok']]) {
+    if (!val) continue;
+    const row = document.createElement('div');
+    row.className = 'rung';
+    row.innerHTML = '<i class="dot"></i><span class="lvl"></span><span class="nm leg"></span>';
+    row.querySelector('.lvl').textContent = lvl;
+    row.querySelector('.nm').textContent = val;
+    el.append(row);
+  }
+}
+
+function renderFacts(el, facts) {
+  el.className = 'kids trans-facts';
+  el.innerHTML = facts
+    .map(([k, v]) => `<div class="trans-fact"><dt>${k}</dt><dd>${v}</dd></div>`).join('');
+}
+
+/** Minimise button: one per card, all flipping the same body class. */
+function wireMin(btn) {
+  btn.addEventListener('click', () => {
+    document.body.classList.toggle('card-collapsed');
+    relayoutOverlays();
+  });
+  return btn;
+}
+wireMin(pkMin);
+wireMin(fkMin);
+wireMin(pdMin);
+wireMin(flMin);
+wireMin(sdMin);
+
+function minLabel(btn) {
+  const expanded = !document.body.classList.contains('card-collapsed');
+  btn.setAttribute('aria-label', expanded ? 'Perkecil info' : 'Perluas info');
+  btn.title = expanded ? 'Perkecil info' : 'Perluas info';
+}
+
 function renderSchoolCard(s) {
   if (!s) { sdDetail.hidden = true; return; }
   sdDetail.hidden = false;
@@ -2527,16 +2884,14 @@ function renderSchoolCard(s) {
   const village = s.village || (place && place.village);
   const district = s.district || (place && place.district);
   sdLadder.innerHTML = '';
-  if (village || district) {
-    for (const [lvl, val] of [['Kelurahan', village], ['Kecamatan', district]]) {
-      if (!val) continue;
-      const row = document.createElement('div');
-      row.className = 'rung';
-      row.innerHTML = '<i class="dot"></i><span class="lvl"></span><span class="nm leg"></span>';
-      row.querySelector('.lvl').textContent = lvl;
-      row.querySelector('.nm').textContent = val;
-      sdLadder.append(row);
-    }
+  for (const [lvl, val] of [['Kelurahan', village], ['Kecamatan', district]]) {
+    if (!val) continue;
+    const row = document.createElement('div');
+    row.className = 'rung';
+    row.innerHTML = '<i class="dot"></i><span class="lvl"></span><span class="nm leg"></span>';
+    row.querySelector('.lvl').textContent = lvl;
+    row.querySelector('.nm').textContent = val;
+    sdLadder.append(row);
   }
   if (!sdLadder.children.length) {
     sdLadder.innerHTML = '<div class="rung"><i class="dot"></i>'
@@ -2546,8 +2901,6 @@ function renderSchoolCard(s) {
   // At least three facts, so the card never reads as a title with nothing in
   // it. Every field is optional, so fall back through progressively more
   // specific and then to the least specific, rather than dropping the row.
-  // The register gives an address and an NPSN for every school, so the card
-  // always has real content. Three facts minimum even when nothing else is known.
   const facts = [];
   if (s.address) facts.push(['Alamat', esc(s.address)]);
   if (village) facts.push(['Kelurahan', esc(village)]);
@@ -2555,7 +2908,7 @@ function renderSchoolCard(s) {
   if (s.phone) facts.push(['Telp', esc(s.phone)]);
   if (s.kelurahan && s.kelurahan !== village) facts.push(['Kelurahan', esc(s.kelurahan)]);
   if (s.postcode) facts.push(['Kode pos', `<span class="code">${esc(s.postcode)}</span>`]);
-  if (hasPoint(s)) {
+  if (hasPin(s)) {
     facts.push(['Koordinat', `${s.lat.toFixed(5)}, ${s.lon.toFixed(5)}`]);
     // Portal pins identify themselves by the ministry record. The handful of
     // schools the portal published without a point were located by hand (see
@@ -2576,246 +2929,10 @@ function renderSchoolCard(s) {
     facts.push(['Titik', `<span class="muted">${esc(s.note || 'belum ada koordinat')}</span>`]);
   }
   facts.push(['NPSN', `<span class="code">${esc(s.npsn || '—')}</span>`]);
-  sdFacts.className = 'kids trans-facts';
-  sdFacts.innerHTML = facts
-    .map(([k, v]) => `<div class="trans-fact"><dt>${k}</dt><dd>${v}</dd></div>`).join('');
+  renderFacts(sdFacts, facts);
 
   sdSource.textContent = SCHOOLS.source || '';
-  const expanded = !document.body.classList.contains('card-collapsed');
-  sdMin.setAttribute('aria-label', expanded ? 'Perkecil info' : 'Perluas info');
-  sdMin.title = expanded ? 'Perkecil info' : 'Perluas info';
-}
-
-sdMin.addEventListener('click', () => {
-  document.body.classList.toggle('card-collapsed');
-  relayoutOverlays();
-});
-
-/** Draw the selected school, zoom to it, and show its card. */
-function highlightSchool(key) {
-  selectedSchool = key;
-  if (!map.getSource(SRC_SCHOOL)) return;
-  const s = SCHOOLS.schools.find(x => x.key === key);
-  const src = map.getSource(SRC_SCHOOL);
-  if (!s) {
-    src.setData({ type: 'FeatureCollection', features: [] });
-    renderSchoolCard(null);
-    // Hand the screen back to the area card, the same way deselecting a route
-    // does. Leaving it hidden would strand the user with nothing in the slot.
-    card.hidden = false;
-    renderCard();
-    renderSchools();
-    relayoutOverlays();
-    return;
-  }
-  // 229 of the 250 official schools have no point in OSM. Those get no pin and
-  // no fly-to, but the card still opens so the school stays readable and the
-  // missing marker is explained instead of looking like a bug.
-  if (hasPoint(s)) {
-    src.setData({ type: 'FeatureCollection', features: [schoolFeature(s)] });
-    map.flyTo({ center: [s.lon, s.lat], zoom: Math.max(map.getZoom(), 15), duration: 700 });
-  } else {
-    src.setData({ type: 'FeatureCollection', features: [] });
-  }
-  // Same stand-aside as a route: two .cards in one slot overlap.
-  card.hidden = true;
-  hideDetailCards();
-  renderSchoolCard(s);
-  renderSchools();
-  relayoutOverlays();
-}
-
-/** Show every school at once. Points, so this is cheap -- no fitBounds guard
- *  beyond the obvious one, unlike the route overlay. */
-function toggleAllSchools(on) {
-  showAllSchools = !!on;
-  if (!map.getSource(SRC_SCHOOL_ALL)) return;
-  const src = map.getSource(SRC_SCHOOL_ALL);
-  if (!showAllSchools) {
-    src.setData({ type: 'FeatureCollection', features: [] });
-    return;
-  }
-  const placed = SCHOOLS.schools.filter(hasPoint);
-  src.setData({ type: 'FeatureCollection', features: placed.map(schoolFeature) });
-  const lons = placed.map(s => s.lon), lats = placed.map(s => s.lat);
-  if (lons.length) {
-    map.fitBounds([[Math.min(...lons), Math.min(...lats)],
-      [Math.max(...lons), Math.max(...lats)]], {
-      padding: { top: 110, bottom: 220, left: 70, right: 70 },
-      maxZoom: 13, duration: 700,
-    });
-  }
-}
-schoolAllBox.addEventListener('change', () => toggleAllSchools(schoolAllBox.checked));
-
-function renderSchools(query) {
-  if (!schoolGroups) return;
-  // 250 rows is too many to scan, so the search box filters as you type. It
-  // matches name, NPSN, village and district -- a user looking for a school in
-  // Cilodong is as likely to type the kecamatan as the school.
-  const q = (query == null ? (schoolSearch ? schoolSearch.value : '') : query)
-    .trim().toLowerCase();
-  const byLabel = new Map();
-  let shown = 0;
-  for (const s of SCHOOLS.schools) {
-    if (q && !(s.name.toLowerCase().includes(q)
-      || (s.npsn || '').includes(q)
-      || (s.village || '').toLowerCase().includes(q)
-      || (s.district || '').toLowerCase().includes(q))) continue;
-    shown++;
-    if (!byLabel.has(s.label)) byLabel.set(s.label, []);
-    byLabel.get(s.label).push(s);
-  }
-  const labels = SCHOOL_ORDER.filter(l => byLabel.has(l));
-  // Any level the payload gained that ORDER does not know about still gets
-  // listed, rather than silently vanishing from the sidebar.
-  for (const l of byLabel.keys()) if (!labels.includes(l)) labels.push(l);
-
-  schoolGroups.innerHTML = labels.map(l => {
-    const list = byLabel.get(l).sort((a, b) => a.name.localeCompare(b.name, 'id'));
-    return `<div class="tg" data-open="1">
-      <button class="tg-head" type="button" aria-expanded="true">
-        <svg class="tg-chev" width="11" height="11" viewBox="0 0 24 24" fill="none"
-             stroke="currentColor" stroke-width="3" stroke-linecap="round"
-             stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
-        <span class="tg-t">${esc(l)}</span><span class="tg-n">${list.length}</span>
-      </button>
-      <div class="tg-body">${list.map(s => `
-        <button class="road-row${s.key === selectedSchool ? ' is-sel' : ''}" type="button"
-                data-skey="${esc(s.key)}">
-          <span class="rr-badge">${esc(s.label.replace(/ (Negeri|Swasta)$/, ''))}</span>
-          <span class="rr-name">${esc(s.name)}</span>
-          ${hasPoint(s) ? '' : '<span class="rr-nopt" title="belum ada titik yang sah di sumber">no pin</span>'}
-        </button>`).join('')}
-      </div></div>`;
-  }).join('');
-
-  // With 250 rows a wrong query can legitimately match nothing; say so rather
-  // than leaving an empty panel that looks like a failed load.
-  if (schoolEmpty) schoolEmpty.hidden = shown > 0;
-
-  // Counts and provenance. The note says plainly how the list was built and
-  // what it leaves out, because a name-matched list is not an official register
-  // and someone using it to pick a school needs to know that.
-  // 242 rows now, so the note carries the numbers that matter: how many are on
-  // the official register, and how many carry a coordinate.
-  const n = SCHOOLS.schools.length;
-  const placed = SCHOOLS.schools.filter(hasPoint).length;
-  const noPt = n - placed;
-  schoolNote.innerHTML = `<b>${n}</b> sekolah dari data resmi Kemendikdasmen `
-    + `(Sekolah Kita), lengkap dengan NPSN, jenjang, status, dan alamat. `
-    + `<b>${placed}</b> punya koordinat resmi dan tampil sebagai titik di peta; `
-    + (noPt ? `<b>${noPt}</b> belum punya koordinat di sumber, jadi tetap `
-      + `terdaftar di sini tanpa pin — buka kartunya untuk alamat lengkap. `
-      : `semuanya punya titik di peta. `)
-    + `Cari nama sekolah, NPSN, atau kelurahan.`;
-}
-
-if (schoolGroups) {
-  schoolGroups.addEventListener('click', e => {
-    const head = e.target.closest('.tg-head');
-    if (head) {
-      const g = head.closest('.tg');
-      g.dataset.open = g.dataset.open === '1' ? '0' : '1';
-      return;
-    }
-    const row = e.target.closest('[data-skey]');
-    if (!row) return;
-    const key = row.dataset.skey;
-    if (key === selectedSchool) {
-      highlightSchool(null);          // tapping the selection clears it
-    } else {
-      highlightSchool(key);
-    }
-    if (window.matchMedia('(max-width: 760px)').matches) setSidebar(false);
-  });
-}
-
-/* ---------- secondary schools ---------- */
-transAllBox.addEventListener('change', () => toggleAllAngkot(transAllBox.checked));
-
-/* Transport list interaction. Separate handlers from the road ones because the
-   two lists share class names but not behaviour, and a combined query would
-   make each of them guard against the other's rows. Placed after renderTransport
-   so transportGroups is already initialised — attaching a listener to a const
-   before its declaration throws on the TDZ. */
-transportGroups.addEventListener('click', e => {
-  const head = e.target.closest('.road-head');
-  if (head) {
-    const g = head.closest('.road-group');
-    const key = g.dataset.key;
-    if (transportOpen.has(key)) transportOpen.delete(key);
-    else transportOpen.add(key);
-    renderTransport();
-    return;
-  }
-  const row = e.target.closest('.road-row');
-  if (row && !row.disabled) {
-    const k = row.dataset.key;
-    highlightRoute(selectedRoute === k ? null : k);
-    if (window.matchMedia('(max-width: 760px)').matches) setSidebar(false);
-  }
-});
-
-if (schoolSearch) {
-  // Re-render on input, but keep it cheap: the list is 250 strings.
-  schoolSearch.addEventListener('input', () => renderSchools(schoolSearch.value));
-  schoolSearch.addEventListener('keydown', e => {
-    if (e.key !== 'Enter') return;
-    e.preventDefault();
-    const first = schoolGroups.querySelector('[data-skey]');
-    if (first) first.click();
-  });
-}
-
-/* ---------- puskesmas ---------- */
-/* Same three pieces as the schools: a list grouped by kecamatan, a selected
-   marker with a detail card, and a show-all overlay. The data is thinner than
-   the schools' -- OSM covers 11 of the city's facilities with a pin, and six
-   UPTD mains from the Dinkes register carry no pin -- so the note says so
-   instead of hiding it. Puskesmas Pembantu are kept too: they are where most
-   people actually get immunised and check-ups. */
-
-const PUSKESMAS = window.DEPOK_PUSKESMAS || { source: '', list: [] };
-const puskesAllBox = document.getElementById('puskes-all');
-const puskesNote = document.getElementById('puskes-note');
-const puskesGroups = document.getElementById('puskes-groups');
-const puskesSearch = document.getElementById('puskes-search');
-const puskesEmpty = document.getElementById('puskes-empty');
-const pkDetail = document.getElementById('puskes-detail');
-const pkEyebrow = document.getElementById('pk-eyebrow');
-const pkName = document.getElementById('pk-name');
-const pkLadder = document.getElementById('pk-ladder');
-const pkFacts = document.getElementById('pk-facts');
-const pkSource = document.getElementById('pk-source');
-const pkMin = document.getElementById('pk-min');
-let selectedPuskes = null;
-let showAllPuskes = false;
-
-// Same rule as the schools: only a real point becomes a map feature. The six
-// register-only UPTDs stay in the list and the card, marked without a pin.
-function hasPuskesPin(p) {
-  return p.lon != null && p.lat != null && Number.isFinite(p.lon) && Number.isFinite(p.lat);
-}
-
-function puskesFeature(p) {
-  return {
-    type: 'Feature',
-    geometry: { type: 'Point', coordinates: [p.lon, p.lat] },
-    properties: { name: p.name, key: p.key },
-  };
-}
-
-// Village/district by point-in-polygon (placeForSchool is a generic pip over
-// the kelurahan polygons -- the name is historical, the geometry is not). Run
-// once at load so grouping does not recompute it per render.
-for (const p of PUSKESMAS.list) {
-  if (!hasPuskesPin(p)) continue;
-  const place = placeForSchool(p.lon, p.lat);
-  if (place) {
-    if (!p.district) p.district = place.district;
-    p.village = place.village;
-  }
+  minLabel(sdMin);
 }
 
 function renderPuskesCard(p) {
@@ -2825,19 +2942,9 @@ function renderPuskesCard(p) {
     : p.kind === 'pembantu' ? 'Puskesmas pembantu' : 'UPTD Puskesmas';
   pkName.textContent = p.name;
 
-  // Ladder: village -> district -> city, the same hierarchy as the school card.
   // For register-only entries the village is unknown and only the district
   // shows, which is still more useful than an empty ladder.
-  pkLadder.innerHTML = '';
-  for (const [lvl, val] of [['Kelurahan', p.village], ['Kecamatan', p.district], ['Kota', 'Depok']]) {
-    if (!val) continue;
-    const row = document.createElement('div');
-    row.className = 'rung';
-    row.innerHTML = '<i class="dot"></i><span class="lvl"></span><span class="nm leg"></span>';
-    row.querySelector('.lvl').textContent = lvl;
-    row.querySelector('.nm').textContent = val;
-    pkLadder.append(row);
-  }
+  renderLadder(pkLadder, p);
 
   // Facts, every field optional: a register-only entry has nothing but its
   // name and district, and the card explains the missing pin instead of
@@ -2848,7 +2955,7 @@ function renderPuskesCard(p) {
   if (p.address) facts.push(['Alamat', esc(p.address)]);
   if (p.phone) facts.push(['Telp', `<span class="code">${esc(p.phone)}</span>`]);
   if (p.website) facts.push(['Web', esc(p.website)]);
-  if (hasPuskesPin(p)) {
+  if (hasPin(p)) {
     const src = p.pin_src === 'gmaps'
       ? `Google Maps <span class="muted">(geokode nama resmi)</span>`
       : `OpenStreetMap <span class="code">${esc(p.osm)}</span>`;
@@ -2857,206 +2964,10 @@ function renderPuskesCard(p) {
   } else {
     facts.push(['Titik', `<span class="muted">belum ada pin di OpenStreetMap</span>`]);
   }
-  pkFacts.className = 'kids trans-facts';
-  pkFacts.innerHTML = facts
-    .map(([k, v]) => `<div class="trans-fact"><dt>${k}</dt><dd>${v}</dd></div>`).join('');
+  renderFacts(pkFacts, facts);
 
   pkSource.textContent = PUSKESMAS.source || '';
-  const expanded = !document.body.classList.contains('card-collapsed');
-  pkMin.setAttribute('aria-label', expanded ? 'Perkecil info' : 'Perluas info');
-  pkMin.title = expanded ? 'Perkecil info' : 'Perluas info';
-}
-
-pkMin.addEventListener('click', () => {
-  document.body.classList.toggle('card-collapsed');
-  relayoutOverlays();
-});
-
-/** Draw the selected puskesmas, zoom to it, and show its card. */
-function highlightPuskes(key) {
-  selectedPuskes = key;
-  if (!map.getSource(SRC_PUSKES)) return;
-  const p = PUSKESMAS.list.find(x => x.key === key);
-  const src = map.getSource(SRC_PUSKES);
-  if (!p) {
-    src.setData({ type: 'FeatureCollection', features: [] });
-    renderPuskesCard(null);
-    // Hand the screen back to the area card, the same way the other menus do.
-    card.hidden = false;
-    renderCard();
-    renderPuskesmas();
-    relayoutOverlays();
-    return;
-  }
-  if (hasPuskesPin(p)) {
-    src.setData({ type: 'FeatureCollection', features: [puskesFeature(p)] });
-    map.flyTo({ center: [p.lon, p.lat], zoom: Math.max(map.getZoom(), 15), duration: 700 });
-  } else {
-    src.setData({ type: 'FeatureCollection', features: [] });
-  }
-  // Same stand-aside as a route or school: two .cards in one slot overlap.
-  card.hidden = true;
-  hideDetailCards();
-  renderPuskesCard(p);
-  renderPuskesmas();
-  relayoutOverlays();
-}
-
-/** Show every pinned puskesmas at once. Points, so this is cheap -- no
- *  fitBounds guard beyond the obvious one, unlike the route overlay. */
-function toggleAllPuskes(on) {
-  showAllPuskes = !!on;
-  if (!map.getSource(SRC_PUSKES_ALL)) return;
-  const src = map.getSource(SRC_PUSKES_ALL);
-  if (!showAllPuskes) {
-    src.setData({ type: 'FeatureCollection', features: [] });
-    return;
-  }
-  const placed = PUSKESMAS.list.filter(hasPuskesPin);
-  src.setData({ type: 'FeatureCollection', features: placed.map(puskesFeature) });
-  const lons = placed.map(p => p.lon), lats = placed.map(p => p.lat);
-  if (lons.length) {
-    map.fitBounds([[Math.min(...lons), Math.min(...lats)],
-      [Math.max(...lons), Math.max(...lats)]], {
-      padding: { top: 110, bottom: 220, left: 70, right: 70 },
-      maxZoom: 13, duration: 700,
-    });
-  }
-}
-puskesAllBox.addEventListener('change', () => toggleAllPuskes(puskesAllBox.checked));
-
-function renderPuskesmas(query) {
-  if (!puskesGroups) return;
-  // 17 rows fit on one screen, but the search box is kept anyway: health
-  // lookups are usually by kecamatan or kelurahan, and a pattern-match across
-  // name + district + village covers both.
-  const q = (query == null ? (puskesSearch ? puskesSearch.value : '') : query)
-    .trim().toLowerCase();
-  const byDistrict = new Map();
-  let shown = 0;
-  for (const p of PUSKESMAS.list) {
-    if (q && !(p.name.toLowerCase().includes(q)
-      || (p.district || '').toLowerCase().includes(q)
-      || (p.village || '').toLowerCase().includes(q))) continue;
-    shown++;
-    if (!byDistrict.has(p.district)) byDistrict.set(p.district, []);
-    byDistrict.get(p.district).push(p);
-  }
-  const districts = Array.from(byDistrict.entries())
-    .sort((a, b) => String(a[0] || 'kecamatan tidak tercatat')
-      .localeCompare(String(b[0] || 'kecamatan tidak tercatat'), 'id'));
-
-  puskesGroups.innerHTML = districts.map(([d, list]) => {
-    const label = d || 'kecamatan tidak tercatat';
-    list.sort((a, b) => a.name.localeCompare(b.name, 'id'));
-    return `<div class="tg" data-open="1">
-      <button class="tg-head" type="button" aria-expanded="true">
-        <svg class="tg-chev" width="11" height="11" viewBox="0 0 24 24" fill="none"
-             stroke="currentColor" stroke-width="3" stroke-linecap="round"
-             stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
-        <span class="tg-t">Kecamatan ${esc(label)}</span><span class="tg-n">${list.length}</span>
-      </button>
-      <div class="tg-body">${list.map(p => `
-        <button class="road-row${p.key === selectedPuskes ? ' is-sel' : ''}" type="button"
-                data-pkey="${esc(p.key)}">
-          <span class="rr-badge">${esc(p.kind === 'kelurahan' ? 'kel' : p.kind === 'pembantu' ? 'pemb' : 'UPTD')}</span>
-          <span class="rr-name">${esc(p.name.replace(/^UPTD /, ''))}</span>
-          ${p.open24 ? '<span class="rr-ref" title="melayani 24 jam (Dinkes 2025)">24</span>' : ''}
-          ${hasPuskesPin(p) ? '' : '<span class="rr-nopt" title="belum ada pin di OpenStreetMap">no pin</span>'}
-        </button>`).join('')}
-      </div></div>`;
-  }).join('');
-
-  // A wrong query can legitimately match nothing; say so.
-  if (puskesEmpty) puskesEmpty.hidden = shown > 0;
-
-  // Provenance, with the numbers that matter: the list itself is the official
-  // Dinkes portal register (37 puskesmas across 11 kecamatan); the pins come
-  // from OpenStreetMap where the community mapped the facility, otherwise from
-  // Google Maps geocoding of the official name -- the payload records pin_src
-  // so the split below is data, not a guess.
-  const n = PUSKESMAS.list.length;
-  const osmN = PUSKESMAS.list.filter(p => p.pin_src === 'osm').length;
-  const gmN = PUSKESMAS.list.filter(p => p.pin_src === 'gmaps').length;
-  const noPt = PUSKESMAS.list.filter(p => !p.pin_src).length;
-  const d24 = PUSKESMAS.list.filter(p => p.open24).length;
-  puskesNote.innerHTML = `<b>${n}</b> puskesmas di <b>${new Set(PUSKESMAS.list.map(p => p.district)).size}</b> kecamatan `
-    + `— daftar resmi portal Puskesmas Dinkes. Pin: <b>${osmN}</b> dari OpenStreetMap`
-    + (gmN ? `, <b>${gmN}</b> dari Google Maps` : '')
-    + (noPt ? `; <b>${noPt}</b> belum punya pin` : '')
-    + `. <b>${d24}</b> melayani 24 jam (jadwal Dinkes 2025). `
-    + `Cari nama puskesmas atau kelurahan.`;
-}
-
-if (puskesGroups) {
-  puskesGroups.addEventListener('click', e => {
-    const head = e.target.closest('.tg-head');
-    if (head) {
-      const g = head.closest('.tg');
-      g.dataset.open = g.dataset.open === '1' ? '0' : '1';
-      return;
-    }
-    const row = e.target.closest('[data-pkey]');
-    if (!row) return;
-    const key = row.dataset.pkey;
-    if (key === selectedPuskes) {
-      highlightPuskes(null);          // tapping the selection clears it
-    } else {
-      highlightPuskes(key);
-    }
-    if (window.matchMedia('(max-width: 760px)').matches) setSidebar(false);
-  });
-}
-
-if (puskesSearch) {
-  puskesSearch.addEventListener('input', () => renderPuskesmas(puskesSearch.value));
-  puskesSearch.addEventListener('keydown', e => {
-    if (e.key !== 'Enter') return;
-    e.preventDefault();
-    const first = puskesGroups.querySelector('[data-pkey]');
-    if (first) first.click();
-  });
-}
-
-/* ---------- faskes (OSM health facilities) ---------- */
-/* The complement to the Dinkes register above: hospitals, clinics, pharmacies
-   and dentists' practices as mapped in OpenStreetMap. Same three pieces as the
-   puskesmas section -- list grouped by kecamatan, selected pin with a card,
-   show-all overlay. The one difference the note has to own: this is OSM
-   coverage, not an official register, so a facility missing here means "not
-   mapped yet", not "does not exist". */
-
-const FASKES = window.DEPOK_FASKES || { source: '', counts: {}, list: [] };
-const faskesAllBox = document.getElementById('faskes-all');
-const faskesNote = document.getElementById('faskes-note');
-const faskesGroups = document.getElementById('faskes-groups');
-const faskesSearch = document.getElementById('faskes-search');
-const faskesEmpty = document.getElementById('faskes-empty');
-const fkDetail = document.getElementById('faskes-detail');
-const fkEyebrow = document.getElementById('fk-eyebrow');
-const fkName = document.getElementById('fk-name');
-const fkLadder = document.getElementById('fk-ladder');
-const fkFacts = document.getElementById('fk-facts');
-const fkSource = document.getElementById('fk-source');
-const fkMin = document.getElementById('fk-min');
-let selectedFaskes = null;
-let showAllFaskes = false;
-
-// Kinds arrive in full ("Rumah sakit"); rows need a badge that fits.
-const FASKES_BADGE = {
-  'Rumah sakit': 'RS', 'Klinik': 'Klinik', 'Apotek': 'Apotek', 'Dokter gigi': 'Gigi',
-};
-
-function hasFaskesPin(f) {
-  return f.lon != null && f.lat != null && Number.isFinite(f.lon) && Number.isFinite(f.lat);
-}
-
-function faskesFeature(f) {
-  return {
-    type: 'Feature',
-    geometry: { type: 'Point', coordinates: [f.lon, f.lat] },
-    properties: { name: f.name, key: f.key },
-  };
+  minLabel(pkMin);
 }
 
 function renderFaskesCard(f) {
@@ -3065,17 +2976,7 @@ function renderFaskesCard(f) {
   fkEyebrow.textContent = f.kind || 'Fasilitas kesehatan';
   fkName.textContent = f.name;
 
-  // Ladder: village -> district -> city, the same hierarchy as the other cards.
-  fkLadder.innerHTML = '';
-  for (const [lvl, val] of [['Kelurahan', f.village], ['Kecamatan', f.district], ['Kota', 'Depok']]) {
-    if (!val) continue;
-    const row = document.createElement('div');
-    row.className = 'rung';
-    row.innerHTML = '<i class="dot"></i><span class="lvl"></span><span class="nm leg"></span>';
-    row.querySelector('.lvl').textContent = lvl;
-    row.querySelector('.nm').textContent = val;
-    fkLadder.append(row);
-  }
+  renderLadder(fkLadder, f);
 
   // Facts, every field optional: an OSM pharmacy is often just a name and a
   // node id, and the card has to stay readable with that.
@@ -3085,211 +2986,57 @@ function renderFaskesCard(f) {
   if (f.phone) facts.push(['Telp', `<span class="code">${esc(f.phone)}</span>`]);
   if (f.opening_hours) facts.push(['Jam buka', esc(f.opening_hours)]);
   if (f.website) facts.push(['Web', esc(f.website)]);
-  if (hasFaskesPin(f)) {
+  if (hasPin(f)) {
     facts.push(['Koordinat', `${f.lat.toFixed(5)}, ${f.lon.toFixed(5)}`]);
     facts.push(['Titik', `OpenStreetMap <span class="code">${esc(f.osm)}</span>`]);
   }
-  fkFacts.className = 'kids trans-facts';
-  fkFacts.innerHTML = facts
-    .map(([k, v]) => `<div class="trans-fact"><dt>${k}</dt><dd>${v}</dd></div>`).join('');
+  renderFacts(fkFacts, facts);
 
   fkSource.textContent = FASKES.source || '';
-  const expanded = !document.body.classList.contains('card-collapsed');
-  fkMin.setAttribute('aria-label', expanded ? 'Perkecil info' : 'Perluas info');
-  fkMin.title = expanded ? 'Perkecil info' : 'Perluas info';
+  minLabel(fkMin);
 }
 
-fkMin.addEventListener('click', () => {
-  document.body.classList.toggle('card-collapsed');
-  relayoutOverlays();
-});
+/** The card for an OSM category point or a curated point. `kurasi` says which
+ *  of the two, and `color` is the accent the card borrows from the row's
+ *  family -- the element is shared, so the colour is set per render. */
+function renderPoiCard(p, kurasi, color) {
+  if (!p) { pdDetail.hidden = true; return; }
+  pdDetail.hidden = false;
+  const label = p.label || p.kind || 'Titik';
+  pdEyebrow.textContent = kurasi ? `${label} · kurasi` : label;
+  pdName.textContent = p.name;
 
-/** Draw the selected faskes, zoom to it, and show its card. */
-function highlightFaskes(key) {
-  selectedFaskes = key;
-  if (!map.getSource(SRC_FASKES)) return;
-  const f = FASKES.list.find(x => x.key === key);
-  const src = map.getSource(SRC_FASKES);
-  if (!f) {
-    src.setData({ type: 'FeatureCollection', features: [] });
-    renderFaskesCard(null);
-    // Hand the screen back to the area card, the same way the other menus do.
-    card.hidden = false;
-    renderCard();
-    renderFaskes();
-    relayoutOverlays();
-    return;
+  renderLadder(pdLadder, p);
+
+  const facts = [];
+  if (p.religion_name) facts.push(['Agama', esc(p.religion_name)]);
+  if (p.denomination) facts.push(['Mazhab', esc(p.denomination)]);
+  if (p.subkind) facts.push(['Jenis', esc(p.subkind.replace(/_/g, ' '))]);
+  if (p.operator) facts.push(['Pengelola', esc(p.operator)]);
+  if (p.address) facts.push(['Alamat', esc(p.address)]);
+  if (p.phone) facts.push(['Telp', `<span class="code">${esc(p.phone)}</span>`]);
+  if (p.opening_hours) facts.push(['Jam buka', esc(p.opening_hours)]);
+  if (p.website) facts.push(['Web', esc(p.website)]);
+  if (hasPin(p)) {
+    facts.push(['Koordinat', `${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}`]);
+    facts.push(['Titik', kurasi
+      ? 'Titik kurator (Studio Atlas)'
+      : `OpenStreetMap <span class="code">${esc(p.osm || '')}</span>`]);
   }
-  if (hasFaskesPin(f)) {
-    src.setData({ type: 'FeatureCollection', features: [faskesFeature(f)] });
-    map.flyTo({ center: [f.lon, f.lat], zoom: Math.max(map.getZoom(), 15), duration: 700 });
-  } else {
-    src.setData({ type: 'FeatureCollection', features: [] });
+  if (kurasi) {
+    // The two facts no other card has: why the point is there, and on whose
+    // authority. Without them the row would read as a register entry.
+    if (p.reason) facts.push(['Alasan kurasi', esc(p.reason)]);
+    if (p.source) facts.push(['Sumber', esc(p.source)]);
+    facts.push(['Catatan', '<span class="muted">Titik suntingan kurator '
+      + '(Studio Atlas), belum ada di sumber resmi maupun OpenStreetMap.</span>']);
   }
-  // Same stand-aside as the other detail cards: one slot, one card.
-  card.hidden = true;
-  hideDetailCards();
-  renderFaskesCard(f);
-  renderFaskes();
-  relayoutOverlays();
-}
+  renderFacts(pdFacts, facts);
 
-/** Show every pinned faskes at once. Points, so this is cheap -- no fitBounds
- *  guard beyond the obvious one, unlike the route overlay. */
-function toggleAllFaskes(on) {
-  showAllFaskes = !!on;
-  if (!map.getSource(SRC_FASKES_ALL)) return;
-  const src = map.getSource(SRC_FASKES_ALL);
-  if (!showAllFaskes) {
-    src.setData({ type: 'FeatureCollection', features: [] });
-    return;
-  }
-  const placed = FASKES.list.filter(hasFaskesPin);
-  src.setData({ type: 'FeatureCollection', features: placed.map(faskesFeature) });
-  const lons = placed.map(f => f.lon), lats = placed.map(f => f.lat);
-  if (lons.length) {
-    map.fitBounds([[Math.min(...lons), Math.min(...lats)],
-      [Math.max(...lons), Math.max(...lats)]], {
-      padding: { top: 110, bottom: 220, left: 70, right: 70 },
-      maxZoom: 13, duration: 700,
-    });
-  }
-}
-faskesAllBox.addEventListener('change', () => toggleAllFaskes(faskesAllBox.checked));
-
-function renderFaskes(query) {
-  if (!faskesGroups) return;
-  // 82 rows sorted by kecamatan; the search box matches name, kind, village
-  // and district, since a health lookup is as often "apotek near Sawangan" as
-  // it is a name.
-  const q = (query == null ? (faskesSearch ? faskesSearch.value : '') : query)
-    .trim().toLowerCase();
-  const byDistrict = new Map();
-  let shown = 0;
-  for (const f of FASKES.list) {
-    if (q && !(f.name.toLowerCase().includes(q)
-      || (f.kind || '').toLowerCase().includes(q)
-      || (f.village || '').toLowerCase().includes(q)
-      || (f.district || '').toLowerCase().includes(q))) continue;
-    shown++;
-    if (!byDistrict.has(f.district)) byDistrict.set(f.district, []);
-    byDistrict.get(f.district).push(f);
-  }
-  const districts = Array.from(byDistrict.entries())
-    .sort((a, b) => String(a[0] || 'kecamatan tidak tercatat')
-      .localeCompare(String(b[0] || 'kecamatan tidak tercatat'), 'id'));
-
-  faskesGroups.innerHTML = districts.map(([d, list]) => {
-    const label = d || 'kecamatan tidak tercatat';
-    list.sort((a, b) => a.name.localeCompare(b.name, 'id'));
-    return `<div class="tg" data-open="1">
-      <button class="tg-head" type="button" aria-expanded="true">
-        <svg class="tg-chev" width="11" height="11" viewBox="0 0 24 24" fill="none"
-             stroke="currentColor" stroke-width="3" stroke-linecap="round"
-             stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
-        <span class="tg-t">Kecamatan ${esc(label)}</span><span class="tg-n">${list.length}</span>
-      </button>
-      <div class="tg-body">${list.map(f => `
-        <button class="road-row${f.key === selectedFaskes ? ' is-sel' : ''}" type="button"
-                data-fkey="${esc(f.key)}">
-          <span class="rr-badge">${esc(FASKES_BADGE[f.kind] || f.kind)}</span>
-          <span class="rr-name">${esc(f.name)}</span>
-        </button>`).join('')}
-      </div></div>`;
-  }).join('');
-
-  // A wrong query can legitimately match nothing; say so.
-  if (faskesEmpty) faskesEmpty.hidden = shown > 0;
-
-  // Provenance, with the numbers that matter: this list is OSM coverage, not a
-  // register, and the note says what that means for a name you cannot find.
-  const n = FASKES.list.length;
-  const byKind = (FASKES.counts && FASKES.counts.by_kind) || {};
-  const kinds = Object.entries(byKind)
-    .sort((a, b) => b[1] - a[1])
-    .map(([k, v]) => `<b>${v}</b> ${esc(k.toLowerCase())}`).join(' · ');
-  faskesNote.innerHTML = `<b>${n}</b> fasilitas kesehatan dari OpenStreetMap `
-    + `(lisensi ODbL) — pelengkap daftar puskesmas di atas: ${kinds}. `
-    + `Kelengkapan mengikuti pemetaan OSM, jadi tidak adanya sebuah faskes di sini `
-    + `berarti belum terpetakan, bukan berarti tidak ada. `
-    + `Cari nama, jenis, kelurahan atau kecamatan.`;
-}
-
-if (faskesGroups) {
-  faskesGroups.addEventListener('click', e => {
-    const head = e.target.closest('.tg-head');
-    if (head) {
-      const g = head.closest('.tg');
-      g.dataset.open = g.dataset.open === '1' ? '0' : '1';
-      return;
-    }
-    const row = e.target.closest('[data-fkey]');
-    if (!row) return;
-    const key = row.dataset.fkey;
-    if (key === selectedFaskes) {
-      highlightFaskes(null);          // tapping the selection clears it
-    } else {
-      highlightFaskes(key);
-    }
-    if (window.matchMedia('(max-width: 760px)').matches) setSidebar(false);
-  });
-}
-
-if (faskesSearch) {
-  faskesSearch.addEventListener('input', () => renderFaskes(faskesSearch.value));
-  faskesSearch.addEventListener('keydown', e => {
-    if (e.key !== 'Enter') return;
-    e.preventDefault();
-    const first = faskesGroups.querySelector('[data-fkey]');
-    if (first) first.click();
-  });
-}
-
-/* ---------- flood reports (PetaBencana.id) ---------- */
-/* A different kind of layer: an inventory of real flood reports rather than of
-   places. One pin per report location -- reports within 150 m of each other
-   share a pin -- carrying the original text, date and reported depth. The
-   payload is already curated: 209 of the 217 Depok-tagged flood records in the
-   platform's archive were simulation/practice posts and were screened out
-   (the full log lives in scripts/data/flood-history.json). The note says so,
-   because "8 pins" without that context reads as "Depok almost never floods",
-   and the card repeats the stand-aside: a pin is a report location, not a
-   measurement. */
-
-const FLOOD = window.DEPOK_FLOOD
-  || { source: '', list: [], scanned: {}, screening: {}, counts: {} };
-const floodAllBox = document.getElementById('flood-all');
-const floodNote = document.getElementById('flood-note');
-const floodGroups = document.getElementById('flood-groups');
-const floodSearch = document.getElementById('flood-search');
-const floodEmpty = document.getElementById('flood-empty');
-const flDetail = document.getElementById('flood-detail');
-const flEyebrow = document.getElementById('fl-eyebrow');
-const flName = document.getElementById('fl-name');
-const flLadder = document.getElementById('fl-ladder');
-const flFacts = document.getElementById('fl-facts');
-const flSource = document.getElementById('fl-source');
-const flMin = document.getElementById('fl-min');
-let selectedFlood = null;
-let showAllFlood = false;
-
-const ID_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun',
-  'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
-
-/** "2026-04-30" -> "30 Apr 2026". Dates leave the build script as ISO; the
- *  sidebar reads Indonesian. */
-function idDate(iso) {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || '');
-  return m ? `${+m[3]} ${ID_MONTHS[+m[2] - 1]} ${m[1]}` : (iso || '');
-}
-
-function floodFeature(p) {
-  const place = p.village || p.district || 'Kota Depok';
-  return {
-    type: 'Feature',
-    geometry: { type: 'Point', coordinates: [p.lon, p.lat] },
-    properties: { name: place, label: 'Banjir · ' + place, key: p.key },
-  };
+  if (color) pdDetail.style.setProperty('--road-c', color);
+  pdSource.textContent = kurasi ? (KURASI.source || '')
+    : (p.tag ? `${POI.source || ''} · ${esc(p.tag)}` : POI.source || '');
+  minLabel(pdMin);
 }
 
 function renderFloodCard(p) {
@@ -3300,16 +3047,7 @@ function renderFloodCard(p) {
     : 'Laporan banjir warga';
   flName.textContent = p.village || p.district || 'Kota Depok';
 
-  flLadder.innerHTML = '';
-  for (const [lvl, val] of [['Kelurahan', p.village], ['Kecamatan', p.district], ['Kota', 'Depok']]) {
-    if (!val) continue;
-    const row = document.createElement('div');
-    row.className = 'rung';
-    row.innerHTML = '<i class="dot"></i><span class="lvl"></span><span class="nm leg"></span>';
-    row.querySelector('.lvl').textContent = lvl;
-    row.querySelector('.nm').textContent = val;
-    flLadder.append(row);
-  }
+  renderLadder(flLadder, p);
 
   // The card is a mini event log: one fact row per report, original text
   // included, and the depth chip only when the reporter gave one.
@@ -3325,60 +3063,227 @@ function renderFloodCard(p) {
   }
   facts.push(['Catatan', '<span class="muted">Titik = lokasi laporan publik, bukan '
     + 'verifikasi lapangan. Laporan simulasi/pelatihan disaring.</span>']);
-  flFacts.className = 'kids trans-facts';
-  flFacts.innerHTML = facts
-    .map(([k, v]) => `<div class="trans-fact"><dt>${k}</dt><dd>${v}</dd></div>`).join('');
+  renderFacts(flFacts, facts);
 
   flSource.textContent = FLOOD.source || '';
-  const expanded = !document.body.classList.contains('card-collapsed');
-  flMin.setAttribute('aria-label', expanded ? 'Perkecil info' : 'Perluas info');
-  flMin.title = expanded ? 'Perkecil info' : 'Perluas info';
+  minLabel(flMin);
 }
 
-flMin.addEventListener('click', () => {
-  document.body.classList.toggle('card-collapsed');
-  relayoutOverlays();
-});
+const CARD_OF = {
+  school: renderSchoolCard, puskes: renderPuskesCard, faskes: renderFaskesCard,
+  flood: renderFloodCard,
+};
+const ACCENT_OF = {
+  school: 'school', puskes: 'puskes', faskes: 'faskes', darurat: 'darurat',
+  ibadah: 'ibadah', dagang: 'dagang', ruang: 'ruang', flood: 'flood',
+};
 
-/** Draw the selected flood pin, zoom to it, and show its card. */
-function highlightFlood(key) {
-  selectedFlood = key;
-  if (!map.getSource(SRC_FLOOD)) return;
-  const p = FLOOD.list.find(x => x.key === key);
-  const src = map.getSource(SRC_FLOOD);
-  if (!p) {
-    src.setData({ type: 'FeatureCollection', features: [] });
-    renderFloodCard(null);
-    // Hand the screen back to the area card, the same way the other menus do.
+function renderPointCard(hit) {
+  // Curated rows go to the POI card whatever their kind: a register card
+  // (NPSN, Dinkes schedule) has nothing to say about a point that is not in
+  // a register.
+  if (hit.kurasi) { renderPoiCard(hit.data, true, PALETTE[state.theme].kurasi); return; }
+  const fn = CARD_OF[hit.src];
+  if (fn) { fn(hit.data); return; }
+  renderPoiCard(hit.data, false, PALETTE[state.theme][ACCENT_OF[hit.src]] || null);
+}
+
+/* ---------- pilih, gambar, daftar ---------- */
+
+let selected = null;
+const showAll = {};
+
+function clearPointSelections() {
+  for (const src of Object.keys(SRC_PAIR)) {
+    const s = map.getSource(SRC_PAIR[src][0]);
+    if (s) s.setData({ type: 'FeatureCollection', features: [] });
+  }
+  selected = null;
+}
+
+function paintSelection() {
+  for (const [panelId, p] of Object.entries(PANELS)) {
+    const el = document.getElementById(p.groups);
+    if (!el) continue;
+    for (const row of el.querySelectorAll(`[${p.attr}]`)) {
+      row.classList.toggle('is-sel',
+        selected != null && row.dataset[p.ds] === selected.key);
+    }
+  }
+}
+
+/** Push the selected row's marker into its family's selected source. */
+function pushSelected() {
+  if (!selected || !hasPin(selected.data)) return;
+  const s = map.getSource(SRC_PAIR[selected.src][0]);
+  if (s) s.setData({ type: 'FeatureCollection', features: [featureOf(selected)] });
+}
+
+/** Draw the row, zoom to it, and show its card. selectPoint(null) is the
+ *  deselect path: clear the marker and hand the slot back to the area card. */
+function selectPoint(key) {
+  const hit = key == null ? null : ROWS.get(key) || null;
+  clearPointSelections();
+  if (!hit) {
+    hideDetailCards();
     card.hidden = false;
     renderCard();
-    renderFlood();
+    paintSelection();
     relayoutOverlays();
     return;
   }
-  src.setData({ type: 'FeatureCollection', features: [floodFeature(p)] });
-  map.flyTo({ center: [p.lon, p.lat], zoom: Math.max(map.getZoom(), 15), duration: 700 });
-  // Same stand-aside as the other detail cards: one slot, one card.
+  selected = hit;
+  // Rows without a point -- register-only puskesmas, schools the ministry
+  // never located -- get no pin and no fly-to, but the card still opens so
+  // the row stays readable and the missing marker is explained.
+  if (hasPin(hit.data)) {
+    pushSelected();
+    map.flyTo({ center: [hit.data.lon, hit.data.lat],
+      zoom: Math.max(map.getZoom(), 15), duration: 700 });
+  }
+  // Same stand-aside as a route: two .cards in one slot overlap.
   card.hidden = true;
   hideDetailCards();
-  renderFloodCard(p);
-  renderFlood();
+  renderPointCard(hit);
+  paintSelection();
   relayoutOverlays();
 }
 
-/** Show every flood pin at once. Eight pins today, but the overlay is the
- *  same three-piece shape as the other layers so it keeps working when the
- *  archive adds more. */
-function toggleAllFlood(on) {
-  showAllFlood = !!on;
-  if (!map.getSource(SRC_FLOOD_ALL)) return;
-  const src = map.getSource(SRC_FLOOD_ALL);
-  if (!showAllFlood) {
-    src.setData({ type: 'FeatureCollection', features: [] });
+function rowHtml(r) {
+  const p = PANELS[r.panel];
+  return `<button class="road-row${selected != null && r.key === selected.key ? ' is-sel' : ''}" `
+    + `type="button" ${p.attr}="${esc(r.key)}">`
+    + `<span class="rr-badge">${esc(r.badge)}</span>`
+    + `<span class="rr-name">${esc(r.name)}</span>${(r.chips || []).join('')}</button>`;
+}
+
+function groupHtml(panelId, key, count, open, bodyHtml) {
+  return `<div class="tg" data-open="${open ? '1' : '0'}" data-g="${esc(key)}">
+      <button class="tg-head" type="button" aria-expanded="${open}">
+        <svg class="tg-chev" width="11" height="11" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="3" stroke-linecap="round"
+             stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+        <span class="tg-t">${esc(groupLabel(panelId, key))}</span><span class="tg-n">${count}</span>
+      </button>
+      <div class="tg-body">${bodyHtml}</div>
+    </div>`;
+}
+
+/** Render one panel's list. `query` overrides the search box (the input event
+ *  passes its value; the boot and the group toggles pass nothing). */
+function renderPanel(panelId, query) {
+  const p = PANELS[panelId];
+  const el = document.getElementById(p.groups);
+  if (!el) return;
+  const box = p.search ? document.getElementById(p.search) : null;
+  const q = (query == null ? (box ? box.value : '') : query).trim().toLowerCase();
+
+  const by = new Map();
+  let shown = 0;
+  for (const r of PANEL_ROWS[panelId]) {
+    // Name, badge, village, district, NPSN, reason -- one prebuilt haystack
+    // per row, so the filter is a plain substring scan over 2,871 rows.
+    if (q && !r.hay.includes(q)) continue;
+    shown++;
+    if (!by.has(r.group)) by.set(r.group, []);
+    by.get(r.group).push(r);
+  }
+  const groups = Array.from(by.keys()).sort((a, b) => groupSort(panelId, a, b));
+
+  el.innerHTML = groups.map(g => {
+    const open = q ? true : (p.openDefault ? !p.open.has(g) : p.open.has(g));
+    // A lazy panel only builds a visible body: 2,871 school rows is not a
+    // payload a closed group should pay for.
+    const body = (!p.lazy || open)
+      ? by.get(g).map(rowHtml).join('')
+      : '';
+    return groupHtml(panelId, g, by.get(g).length, open, body);
+  }).join('');
+
+  const empty = p.empty ? document.getElementById(p.empty) : null;
+  if (empty) empty.hidden = shown > 0;
+
+  const note = p.note ? document.getElementById(p.note) : null;
+  if (note && NOTE_OF[panelId]) note.innerHTML = NOTE_OF[panelId]();
+}
+
+function renderPanels() {
+  for (const id of Object.keys(PANELS)) renderPanel(id);
+}
+
+function setGroupOpen(p, g, open) {
+  // `open` tracks non-default states: collapsed in the open panels, opened in
+  // Pendidikan. One behaviour, one place to reason about it.
+  if (p.openDefault ? open : !open) p.open.delete(g);
+  else p.open.add(g);
+}
+
+function openGroup(p, g) { setGroupOpen(p, g, true); }
+
+for (const [panelId, p] of Object.entries(PANELS)) {
+  const el = document.getElementById(p.groups);
+  if (el) {
+    el.addEventListener('click', e => {
+      const head = e.target.closest('.tg-head');
+      if (head) {
+        const g = head.closest('.tg').dataset.g;
+        const wasOpen = head.closest('.tg').dataset.open === '1';
+        setGroupOpen(p, g, !wasOpen);
+        renderPanel(panelId);
+        return;
+      }
+      const row = e.target.closest(`[${p.attr}]`);
+      if (!row) return;
+      const key = row.dataset[p.ds];
+      // Tapping the selection clears it.
+      selectPoint(key === (selected && selected.key) ? null : key);
+      if (window.matchMedia('(max-width: 760px)').matches) setSidebar(false);
+    });
+  }
+  const box = p.search ? document.getElementById(p.search) : null;
+  if (box) {
+    box.addEventListener('input', () => renderPanel(panelId, box.value));
+    box.addEventListener('keydown', e => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      const first = el && el.querySelector(`[${p.attr}]`);
+      if (first) first.click();
+    });
+  }
+  const all = document.getElementById(p.all);
+  if (all) all.addEventListener('change', () => togglePanelAll(panelId, all.checked));
+}
+
+/* ---------- show all ---------- */
+
+/** Fill a panel's show-all sources from its rows (pinned rows only). */
+function fillPanelAll(panelId) {
+  for (const src of PANEL_SRC[panelId]) {
+    const s = map.getSource(SRC_PAIR[src][1]);
+    if (!s) continue;
+    s.setData({
+      type: 'FeatureCollection',
+      features: PANEL_ROWS[panelId]
+        .filter(r => r.src === src && hasPin(r.data))
+        .map(featureOf),
+    });
+  }
+}
+
+/** Show every pinned row of a panel at once. Points, so this is cheap -- no
+ *  fitBounds guard beyond the obvious one, unlike the route overlay. */
+function togglePanelAll(panelId, on) {
+  showAll[panelId] = !!on;
+  if (!on) {
+    for (const src of PANEL_SRC[panelId]) {
+      const s = map.getSource(SRC_PAIR[src][1]);
+      if (s) s.setData({ type: 'FeatureCollection', features: [] });
+    }
     return;
   }
-  src.setData({ type: 'FeatureCollection', features: FLOOD.list.map(floodFeature) });
-  const lons = FLOOD.list.map(p => p.lon), lats = FLOOD.list.map(p => p.lat);
+  fillPanelAll(panelId);
+  const placed = PANEL_ROWS[panelId].filter(r => hasPin(r.data));
+  const lons = placed.map(r => r.data.lon), lats = placed.map(r => r.data.lat);
   if (lons.length) {
     map.fitBounds([[Math.min(...lons), Math.min(...lats)],
       [Math.max(...lons), Math.max(...lats)]], {
@@ -3387,329 +3292,105 @@ function toggleAllFlood(on) {
     });
   }
 }
-floodAllBox.addEventListener('change', () => toggleAllFlood(floodAllBox.checked));
 
-function renderFlood(query) {
-  if (!floodGroups) return;
-  // Eight rows fit anywhere, but the search box stays for the same reason the
-  // others have one: the list grows, and a flood lookup is by kelurahan.
-  const q = (query == null ? (floodSearch ? floodSearch.value : '') : query)
-    .trim().toLowerCase();
-  const byDistrict = new Map();
-  let shown = 0;
-  for (const p of FLOOD.list) {
-    const latest = p.reports && p.reports.length ? p.reports[0].text : '';
-    if (q && !(latest.toLowerCase().includes(q)
-      || (p.village || '').toLowerCase().includes(q)
-      || (p.district || '').toLowerCase().includes(q))) continue;
-    shown++;
-    if (!byDistrict.has(p.district)) byDistrict.set(p.district, []);
-    byDistrict.get(p.district).push(p);
+/* ---------- note per panel ---------- */
+
+const kurasiCount = panelId => (PANEL_ROWS[panelId] || []).filter(r => r.kurasi).length;
+const kurasiSentence = n => `Ada juga <b>${n}</b> titik kurasi — suntingan kurator `
+  + `Studio Atlas untuk tempat yang belum ada di sumber mana pun — di grup Titik kurasi.`;
+
+/** "<b>210</b> masjid · <b>30</b> gereja" -- one badge count per kind. */
+function badgeCounts(rows) {
+  const by = new Map();
+  for (const p of rows) {
+    const k = p.badge || p.label;
+    by.set(k, (by.get(k) || 0) + 1);
   }
-  const districts = Array.from(byDistrict.entries())
-    .sort((a, b) => String(a[0] || 'kecamatan tidak tercatat')
-      .localeCompare(String(b[0] || 'kecamatan tidak tercatat'), 'id'));
-
-  floodGroups.innerHTML = districts.map(([d, list]) => {
-    const label = d || 'kecamatan tidak tercatat';
-    list.sort((a, b) => String(b.last_date).localeCompare(String(a.last_date)));
-    return `<div class="tg" data-open="1">
-      <button class="tg-head" type="button" aria-expanded="true">
-        <svg class="tg-chev" width="11" height="11" viewBox="0 0 24 24" fill="none"
-             stroke="currentColor" stroke-width="3" stroke-linecap="round"
-             stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
-        <span class="tg-t">Kecamatan ${esc(label)}</span><span class="tg-n">${list.length}</span>
-      </button>
-      <div class="tg-body">${list.map(p => {
-        const latest = p.reports && p.reports.length ? p.reports[0] : { text: '', depth_cm: null };
-        return `
-        <button class="road-row${p.key === selectedFlood ? ' is-sel' : ''}" type="button"
-                data-flkey="${esc(p.key)}" title="${esc(latest.text)}">
-          <span class="rr-badge">${p.max_depth_cm != null ? esc(p.max_depth_cm + ' cm') : 'banjir'}</span>
-          <span class="rr-name">${esc(latest.text)}</span>
-          <span class="rr-ref">${esc(idDate(p.last_date))}</span>
-        </button>`;
-      }).join('')}
-      </div></div>`;
-  }).join('');
-
-  // A wrong query can legitimately match nothing; say so.
-  if (floodEmpty) floodEmpty.hidden = shown > 0;
-
-  // Provenance, with the numbers that matter: how many reports were screened
-  // and how many survived, so eight pins read as "curated sample", not as the
-  // city's entire flood history. Without this the layer would understate the
-  // risk exactly the way a raw drill-stuffed feed would overstate it.
-  const sc = FLOOD.screening || {}, ct = FLOOD.counts || {}, sn = FLOOD.scanned || {};
-  const span = sn.from && sn.to
-    ? `, arsip <b>${esc(idDate(sn.from))}</b>–<b>${esc(idDate(sn.to))}</b>` : '';
-  floodNote.innerHTML = `<b>${ct.points != null ? ct.points : FLOOD.list.length}</b> titik `
-    + `dari <b>${sc.kept || FLOOD.list.length}</b> laporan banjir warga `
-    + `(PetaBencana.id${span}). Sebanyak <b>${sc.screened || '—'}</b> laporan Depok `
-    + `dipindai; <b>${sc.dropped || '—'}</b> di antaranya simulasi/pelatihan/uji coba `
-    + `dan tidak dipetakan. Titik = lokasi laporan, bukan verifikasi lapangan. `
-    + `Cari kelurahan atau kecamatan.`;
+  return [...by.entries()].sort((a, b) => b[1] - a[1])
+    .map(([k, v]) => `<b>${v}</b> ${esc(String(k).toLowerCase())}`).join(' · ');
 }
 
-if (floodGroups) {
-  floodGroups.addEventListener('click', e => {
-    const head = e.target.closest('.tg-head');
-    if (head) {
-      const g = head.closest('.tg');
-      g.dataset.open = g.dataset.open === '1' ? '0' : '1';
-      return;
-    }
-    const row = e.target.closest('[data-flkey]');
-    if (!row) return;
-    const key = row.dataset.flkey;
-    if (key === selectedFlood) {
-      highlightFlood(null);           // tapping the selection clears it
-    } else {
-      highlightFlood(key);
-    }
-    if (window.matchMedia('(max-width: 760px)').matches) setSidebar(false);
-  });
-}
-
-if (floodSearch) {
-  floodSearch.addEventListener('input', () => renderFlood(floodSearch.value));
-  floodSearch.addEventListener('keydown', e => {
-    if (e.key !== 'Enter') return;
-    e.preventDefault();
-    const first = floodGroups.querySelector('[data-flkey]');
-    if (first) first.click();
-  });
-}
-
-/* ---------- kurasi (Studio Atlas) ---------- */
-/* Points contributed by curators through Studio Atlas (ensiklopedia-kota):
-   places the official registers and OpenStreetMap do not carry yet. One pin per
-   point, grouped by kelurahan. The card keeps the curator's reason and source
-   visible, because that is the whole difference between this layer and the
-   others -- every row here is an edit with a name attached, not a register. */
-
-const KURASI = window.DEPOK_KURASI || { source: '', counts: {}, list: [] };
-const kurasiTitle = document.getElementById('kurasi-title');
-const kurasiAllBox = document.getElementById('kurasi-all');
-const kurasiNote = document.getElementById('kurasi-note');
-const kurasiGroups = document.getElementById('kurasi-groups');
-const kurasiSearch = document.getElementById('kurasi-search');
-const kurasiEmpty = document.getElementById('kurasi-empty');
-const krDetail = document.getElementById('kurasi-detail');
-const krEyebrow = document.getElementById('kr-eyebrow');
-const krName = document.getElementById('kr-name');
-const krLadder = document.getElementById('kr-ladder');
-const krFacts = document.getElementById('kr-facts');
-const krSource = document.getElementById('kr-source');
-const krMin = document.getElementById('kr-min');
-let selectedKurasi = null;
-let showAllKurasi = false;
-
-function hasKurasiPin(k) {
-  return k.lon != null && k.lat != null && Number.isFinite(k.lon) && Number.isFinite(k.lat);
-}
-
-function kurasiFeature(k) {
-  return {
-    type: 'Feature',
-    geometry: { type: 'Point', coordinates: [k.lon, k.lat] },
-    properties: { name: k.name, key: k.key },
-  };
-}
-
-function renderKurasiCard(k) {
-  if (!k) { krDetail.hidden = true; return; }
-  krDetail.hidden = false;
-  krEyebrow.textContent = `${k.label || k.kind || 'Titik'} · kurasi`;
-  krName.textContent = k.name;
-
-  // Ladder: village -> district -> city, the same hierarchy as the other cards.
-  krLadder.innerHTML = '';
-  for (const [lvl, val] of [['Kelurahan', k.village], ['Kecamatan', k.district], ['Kota', 'Depok']]) {
-    if (!val) continue;
-    const row = document.createElement('div');
-    row.className = 'rung';
-    row.innerHTML = '<i class="dot"></i><span class="lvl"></span><span class="nm leg"></span>';
-    row.querySelector('.lvl').textContent = lvl;
-    row.querySelector('.nm').textContent = val;
-    krLadder.append(row);
-  }
-
-  // The two facts no other card has: why the point is there, and on whose
-  // authority. Without them the layer would read as a seventh register.
-  const facts = [];
-  if (k.kind) facts.push(['Jenis', esc(k.label || k.kind)]);
-  if (hasKurasiPin(k)) {
-    facts.push(['Koordinat', `${k.lat.toFixed(5)}, ${k.lon.toFixed(5)}`]);
-  }
-  if (k.reason) facts.push(['Alasan kurasi', esc(k.reason)]);
-  if (k.source) facts.push(['Sumber', esc(k.source)]);
-  facts.push(['Catatan', '<span class="muted">Titik suntingan kurator (Studio Atlas), '
-    + 'belum ada di sumber resmi maupun OpenStreetMap.</span>']);
-  krFacts.className = 'kids trans-facts';
-  krFacts.innerHTML = facts
-    .map(([key, v]) => `<div class="trans-fact"><dt>${key}</dt><dd>${v}</dd></div>`).join('');
-
-  krSource.textContent = KURASI.source || '';
-  const expanded = !document.body.classList.contains('card-collapsed');
-  krMin.setAttribute('aria-label', expanded ? 'Perkecil info' : 'Perluas info');
-  krMin.title = expanded ? 'Perkecil info' : 'Perluas info';
-}
-
-krMin.addEventListener('click', () => {
-  document.body.classList.toggle('card-collapsed');
-  relayoutOverlays();
-});
-
-/** Draw the selected kurasi point, zoom to it, and show its card. */
-function highlightKurasi(key) {
-  selectedKurasi = key;
-  if (!map.getSource(SRC_KURASI)) return;
-  const k = KURASI.list.find(x => x.key === key);
-  const src = map.getSource(SRC_KURASI);
-  if (!k) {
-    src.setData({ type: 'FeatureCollection', features: [] });
-    renderKurasiCard(null);
-    // Hand the screen back to the area card, the same way the other menus do.
-    card.hidden = false;
-    renderCard();
-    renderKurasi();
-    relayoutOverlays();
-    return;
-  }
-  if (hasKurasiPin(k)) {
-    src.setData({ type: 'FeatureCollection', features: [kurasiFeature(k)] });
-    map.flyTo({ center: [k.lon, k.lat], zoom: Math.max(map.getZoom(), 15), duration: 700 });
-  } else {
-    src.setData({ type: 'FeatureCollection', features: [] });
-  }
-  // Same stand-aside as the other detail cards: one slot, one card.
-  card.hidden = true;
-  hideDetailCards();
-  renderKurasiCard(k);
-  renderKurasi();
-  relayoutOverlays();
-}
-
-/** Show every kurasi point at once. Points, so this is cheap. */
-function toggleAllKurasi(on) {
-  showAllKurasi = !!on;
-  if (!map.getSource(SRC_KURASI_ALL)) return;
-  const src = map.getSource(SRC_KURASI_ALL);
-  if (!showAllKurasi) {
-    src.setData({ type: 'FeatureCollection', features: [] });
-    return;
-  }
-  const placed = KURASI.list.filter(hasKurasiPin);
-  src.setData({ type: 'FeatureCollection', features: placed.map(kurasiFeature) });
-  const lons = placed.map(k => k.lon), lats = placed.map(k => k.lat);
-  if (lons.length) {
-    map.fitBounds([[Math.min(...lons), Math.min(...lats)],
-      [Math.max(...lons), Math.max(...lats)]], {
-      padding: { top: 110, bottom: 220, left: 70, right: 70 },
-      maxZoom: 13, duration: 700,
-    });
-  }
-}
-kurasiAllBox.addEventListener('change', () => toggleAllKurasi(kurasiAllBox.checked));
-
-function renderKurasi(query) {
-  if (!kurasiGroups) return;
-  const q = (query == null ? (kurasiSearch ? kurasiSearch.value : '') : query)
-    .trim().toLowerCase();
-  const byVillage = new Map();
-  let shown = 0;
-  for (const k of KURASI.list) {
-    if (q && !(k.name.toLowerCase().includes(q)
-      || (k.kind || '').toLowerCase().includes(q)
-      || (k.label || '').toLowerCase().includes(q)
-      || (k.village || '').toLowerCase().includes(q)
-      || (k.district || '').toLowerCase().includes(q)
-      || (k.reason || '').toLowerCase().includes(q))) continue;
-    shown++;
-    const village = k.village || 'kelurahan tidak tercatat';
-    if (!byVillage.has(village)) byVillage.set(village, []);
-    byVillage.get(village).push(k);
-  }
-  const villages = Array.from(byVillage.entries())
-    .sort((a, b) => String(a[0]).localeCompare(String(b[0]), 'id'));
-
-  // A handful of points in one kecamatan: grouping by kelurahan keeps the list
-  // readable, unlike the kecamatan grouping the bigger registers use.
-  kurasiGroups.innerHTML = villages.map(([v, list]) => {
-    list.sort((a, b) => a.name.localeCompare(b.name, 'id'));
-    return `<div class="tg" data-open="1">
-      <button class="tg-head" type="button" aria-expanded="true">
-        <svg class="tg-chev" width="11" height="11" viewBox="0 0 24 24" fill="none"
-             stroke="currentColor" stroke-width="3" stroke-linecap="round"
-             stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
-        <span class="tg-t">Kelurahan ${esc(v)}</span><span class="tg-n">${list.length}</span>
-      </button>
-      <div class="tg-body">${list.map(k => `
-        <button class="road-row${k.key === selectedKurasi ? ' is-sel' : ''}" type="button"
-                data-krkey="${esc(k.key)}">
-          <span class="rr-badge">${esc(k.label || k.kind || 'titik')}</span>
-          <span class="rr-name">${esc(k.name)}</span>
-        </button>`).join('')}
-      </div></div>`;
-  }).join('');
-
-  // A wrong query can legitimately match nothing; say so.
-  if (kurasiEmpty) kurasiEmpty.hidden = shown > 0;
-
-  // Count in the section head, like the other layers show it in their note.
-  const n = KURASI.list.length;
-  if (kurasiTitle) kurasiTitle.textContent = n ? `Kurasi (${n})` : 'Kurasi';
-
-  // Provenance: the note has to say what the layer is, and what an empty layer
-  // means (no curator edits exported yet -- not "no such places exist").
-  const byKind = (KURASI.counts && KURASI.counts.by_kind) || {};
-  const lab = {};
-  for (const k of KURASI.list) lab[k.kind] = k.label || k.kind;
-  const kinds = Object.entries(byKind)
-    .sort((a, b) => b[1] - a[1])
-    .map(([slug, v]) => `<b>${v}</b> ${esc((lab[slug] || slug).toLowerCase())}`).join(' · ');
-  kurasiNote.innerHTML = n
-    ? `<b>${n}</b> titik kurasi dari Studio Atlas (ensiklopedia-kota) — suntingan `
-      + `kurator untuk tempat yang belum ada di daftar resmi maupun OpenStreetMap`
-      + (kinds ? `: ${kinds}` : '') + `. Alasan dan sumber tiap titik ada di kartunya. `
-      + `Cari nama, jenis, atau kelurahan.`
-    : `Belum ada titik kurasi yang diekspor. Titik ditambahkan lewat `
-      + `<b>Studio Atlas</b> (ensiklopedia-kota, tab Ekspor).`;
-}
-
-if (kurasiGroups) {
-  kurasiGroups.addEventListener('click', e => {
-    const head = e.target.closest('.tg-head');
-    if (head) {
-      const g = head.closest('.tg');
-      g.dataset.open = g.dataset.open === '1' ? '0' : '1';
-      return;
-    }
-    const row = e.target.closest('[data-krkey]');
-    if (!row) return;
-    const key = row.dataset.krkey;
-    if (key === selectedKurasi) {
-      highlightKurasi(null);          // tapping the selection clears it
-    } else {
-      highlightKurasi(key);
-    }
-    if (window.matchMedia('(max-width: 760px)').matches) setSidebar(false);
-  });
-}
-
-if (kurasiSearch) {
-  kurasiSearch.addEventListener('input', () => renderKurasi(kurasiSearch.value));
-  kurasiSearch.addEventListener('keydown', e => {
-    if (e.key !== 'Enter') return;
-    e.preventDefault();
-    const first = kurasiGroups.querySelector('[data-krkey]');
-    if (first) first.click();
-  });
-}
-
-document.getElementById('transport-card-x')
-  .addEventListener('click', () => highlightRoute(null));
+const NOTE_OF = {
+  pendidikan() {
+    const all = SCHOOLS.schools;
+    const fam = new Map();
+    for (const s of all) fam.set(s.family, (fam.get(s.family) || 0) + 1);
+    const fams = [...fam.keys()]
+      .sort((a, b) => FAMILY_ORDER.indexOf(a) - FAMILY_ORDER.indexOf(b))
+      .map(f => `<b>${fam.get(f)}</b> ${esc(f)}`).join(' · ');
+    const placed = all.filter(hasPin).length;
+    const kampus = POI.list.filter(p => p.category === 'pendidikan').length;
+    const kur = kurasiCount('pendidikan');
+    return `<b>${all.length}</b> sekolah dari register resmi Kemendikdasmen `
+      + `(Sekolah Kita), semua jenjang: ${fams}. Ditambah <b>${kampus}</b> kampus `
+      + `dari OpenStreetMap (tanpa NPSN — kampus tidak ada di register). `
+      + `<b>${placed}</b> punya koordinat dan tampil sebagai titik; `
+      + (all.length - placed
+        ? `<b>${all.length - placed}</b> lagi terdaftar tanpa pin — buka kartunya `
+          + `untuk alamat lengkap. `
+        : `semuanya punya titik. `)
+      + (kur ? `${kurasiSentence(kur)} ` : '')
+      + `Klik jenjang untuk membuka daftarnya; cari nama, NPSN, atau kelurahan.`;
+  },
+  kesehatan() {
+    const pk = PUSKESMAS.list;
+    const d24 = pk.filter(p => p.open24).length;
+    const fk = FASKES.list.length;
+    const dr = POI.list.filter(p => p.category === 'kesehatan-darurat').length;
+    const kur = kurasiCount('kesehatan');
+    return `<b>${pk.length}</b> puskesmas dari daftar resmi Dinkes `
+      + `(<b>${d24}</b> buka 24 jam) · <b>${fk}</b> fasilitas kesehatan lain dari `
+      + `OpenStreetMap (rumah sakit, klinik, praktik dokter, apotek) · `
+      + `<b>${dr}</b> polisi & damkar dari OpenStreetMap. `
+      + `Kelengkapan OSM mengikuti pemetaan warga: tidak adanya sebuah tempat di `
+      + `sini berarti belum terpetakan, bukan berarti tidak ada. `
+      + (kur ? `${kurasiSentence(kur)} ` : '')
+      + `Cari nama, jenis, kelurahan atau kecamatan.`;
+  },
+  ibadah() {
+    const rows = POI.list.filter(p => p.category === 'tempat-ibadah');
+    const kur = kurasiCount('ibadah');
+    return `<b>${rows.length}</b> tempat ibadah dari OpenStreetMap (lisensi ODbL): `
+      + `${badgeCounts(rows)}. Kelengkapan mengikuti pemetaan OSM — belum `
+      + `terpetakan bukan berarti tidak ada. `
+      + (kur ? `${kurasiSentence(kur)} ` : '')
+      + `Cari nama, jenis, atau kelurahan.`;
+  },
+  dagang() {
+    const rows = POI.list.filter(p => p.category === 'perdagangan');
+    const kur = kurasiCount('dagang');
+    return `<b>${rows.length}</b> titik perdagangan dari OpenStreetMap (lisensi `
+      + `ODbL): ${badgeCounts(rows)}. Pasar, bank, dan toko yang terpetakan `
+      + `warga — minimarket sampai mal. Kelengkapan mengikuti OSM. `
+      + (kur ? `${kurasiSentence(kur)} ` : '')
+      + `Cari nama, jenis, atau kelurahan.`;
+  },
+  ruang() {
+    const rows = POI.list.filter(p => p.category === 'ruang-terbuka');
+    const kur = kurasiCount('ruang');
+    return `<b>${rows.length}</b> ruang terbuka dari OpenStreetMap (lisensi ODbL): `
+      + `${badgeCounts(rows)}. Taman, fasilitas olahraga, stadion, taman bermain, `
+      + `dan pemakaman yang terpetakan warga. Kelengkapan mengikuti OSM. `
+      + (kur ? `${kurasiSentence(kur)} ` : '')
+      + `Cari nama, jenis, atau kelurahan.`;
+  },
+  lainnya() {
+    // Provenance, with the numbers that matter: how many reports were screened
+    // and how many survived, so eight pins read as "curated sample", not as
+    // the city's entire flood history. Without this the layer would understate
+    // the risk exactly the way a raw drill-stuffed feed would overstate it.
+    const sc = FLOOD.screening || {}, ct = FLOOD.counts || {}, sn = FLOOD.scanned || {};
+    const span = sn.from && sn.to
+      ? `, arsip <b>${esc(idDate(sn.from))}</b>–<b>${esc(idDate(sn.to))}</b>` : '';
+    return `Bagian <b>Lainnya</b> berisi satu lapisan: laporan banjir warga `
+      + `(PetaBencana.id${span}) — <b>${ct.points != null ? ct.points : FLOOD.list.length}</b> `
+      + `titik dari <b>${sc.kept || FLOOD.list.length}</b> laporan. Sebanyak `
+      + `<b>${sc.screened || '—'}</b> laporan Depok dipindai; `
+      + `<b>${sc.dropped || '—'}</b> di antaranya simulasi/pelatihan/uji coba dan `
+      + `tidak dipetakan. Titik = lokasi laporan, bukan verifikasi lapangan. `
+      + `Cari kelurahan atau kecamatan.`;
+  },
+};
 
 /* ---------- boot ---------- */
 document.documentElement.dataset.theme = state.theme;
@@ -3718,11 +3399,7 @@ renderBack();
 renderAreaList();
 renderRoads();
 renderTransport();
-renderSchools();
-renderPuskesmas();
-renderFaskes();
-renderFlood();
-renderKurasi();
+renderPanels();
 sideEl.hidden = true;
 /* Measure the attribution before the first overlay placement, so the card does
    not paint on top of the licence line and then jump. */
@@ -3745,7 +3422,12 @@ if (hash) {
 }
 
 window.__depok = {
-  map, state, KEL, KEC, rank, goCity, openDistrict, selectVillage, selectDistrict, applyTheme,
-  setSidebar, setTab, renderAreaList, renderRoads, ROADS, PUSKESMAS, highlightPuskes,
-  FASKES, highlightFaskes, FLOOD, highlightFlood, KURASI, highlightKurasi, setAreaSelect,
+  map, state, KEL, KEC, rank, goCity, openDistrict, selectVillage, selectDistrict,
+  applyTheme, setSidebar, setTab, renderAreaList, renderRoads, renderPanels,
+  ROADS, SCHOOLS, PUSKESMAS, FASKES, POI, KURASI, FLOOD, PANEL_ROWS,
+  selectPoint, setAreaSelect, togglePanelAll,
+  // The per-layer highlight* functions became one global selector; the old
+  // names stay as aliases so an embedder that still calls one keeps working.
+  highlightSchool: selectPoint, highlightPuskes: selectPoint,
+  highlightFaskes: selectPoint, highlightFlood: selectPoint,
 };

@@ -16,9 +16,13 @@ Dipakai oleh:
 Format berkas (versi 1) — setiap entri wajib memuat id + reason + source:
 
   pois[]:
-    add     {layer:"kurasi", row:{key,name,kind,label,lat,lon,village,district}}
+    add     {layer:"kurasi", row:{key,name,kind,label,category,lat,lon,village,district}}
     set     {layer:"schools|puskesmas|faskes", key, set:{name?, kind?, lat?, lon?}}
     remove  {layer:"schools|puskesmas|faskes", key}
+
+  row.category (add) wajib salah satu CATEGORIES: titik kurasi tampil di panel
+  kategori itu. Berkas lama tanpa category tetap sah selama jenisnya punya
+  turunan di KIND_CATEGORY.
 
   roads[]:
     set-class {group, n, match, class:"arteri|kolektor|lokal"}
@@ -57,6 +61,30 @@ MATCH_DEG = 5e-4          # ~55 m — toleransi match, sama dengan kurasi atlas
 
 # Jenis faskes sebagaimana ditulis lapisan faskes (scripts/build-faskes.py).
 FASKES_KINDS = ("Rumah sakit", "Klinik", "Praktik dokter", "Dokter gigi", "Apotek")
+
+# Taksonomi kategori situs depok-map — lima kategori Atlas Spasial. Setiap
+# titik kurasi masuk tepat satu kategori; itulah panel tempat ia tampil, dan
+# kartunya menandai diri "kurasi". Slug dipakai bersama ensiklopedia-kota.
+CATEGORIES = ("pendidikan", "kesehatan-darurat", "tempat-ibadah",
+              "perdagangan", "ruang-terbuka")
+
+# Jenis titik studio -> kategori bawaan. Studio sudah menanyakan kategori ke
+# kurator; tabel ini fallback untuk berkas lama yang belum memuat category
+# (aturan: "kategori = turunan jenis" persis seperti GROUPS atlas).
+KIND_CATEGORY = {
+    "school": "pendidikan", "kindergarten": "pendidikan",
+    "university": "pendidikan", "college": "pendidikan",
+    "school_khusus": "pendidikan",
+    "puskesmas": "kesehatan-darurat", "hospital": "kesehatan-darurat",
+    "clinic": "kesehatan-darurat", "doctors": "kesehatan-darurat",
+    "pharmacy": "kesehatan-darurat",
+    "police": "kesehatan-darurat", "fire_station": "kesehatan-darurat",
+    "place_of_worship": "tempat-ibadah",
+    "marketplace": "perdagangan", "bank": "perdagangan",
+    "perdagangan": "perdagangan",
+    "park": "ruang-terbuka", "fasilitas_olahraga": "ruang-terbuka",
+    "kuburan": "ruang-terbuka",
+}
 
 # Jenis titik studio -> lapisan resmi yang mungkin jadi sasarannya. Dipakai
 # hanya untuk mempersempit saat sasaran ambigu (bukan filter keras).
@@ -275,6 +303,13 @@ def validate(doc):
                 v = row.get(key)
                 if not isinstance(v, str) or not v.strip():
                     errs.append(f"{at}: row.{key} wajib diisi")
+            cat = row.get("category")
+            if cat is None or (isinstance(cat, str) and not cat.strip()):
+                if KIND_CATEGORY.get(row.get("kind")) is None:
+                    errs.append(f'{at}: row.category wajib diisi (jenis '
+                                f'"{row.get("kind")}" tidak punya kategori bawaan)')
+            elif cat not in CATEGORIES:
+                errs.append(f"{at}: row.category harus salah satu {CATEGORIES}")
             for key in ("lat", "lon"):
                 if not _num(row.get(key)):
                     errs.append(f"{at}: row.{key} harus angka")
@@ -527,10 +562,19 @@ def build_kurasi(doc):
     for e in _adds(doc):
         r = dict(e.get("row") or {})
         r.setdefault("label", r.get("kind") or "")
+        # Kategori: pilihan kurator bila ada, turunan jenis bila berkas lama.
+        # Situs memakai satu nilai ini untuk memilih panel daftar dan warna
+        # kartu; tidak ada kategori berarti titik tidak bisa digambar.
+        cat = r.get("category") or KIND_CATEGORY.get(r.get("kind")) or ""
+        if cat:
+            r["category"] = cat
         r.setdefault("district", "")
         r.setdefault("village", "")
         r.setdefault("reason", e.get("reason") or "")
         r.setdefault("source", e.get("source") or "")
+        # Penanda tetap: situs menggambar titik kurasi di lapisan kategorinya,
+        # jadi baris perlu bisa mengatakan bahwa ia suntingan, bukan register.
+        r["kurasi"] = True
         rows.append(r)
     rows.sort(key=lambda r: (str(r.get("name") or "").casefold(),
                              str(r.get("key") or "")))
@@ -703,6 +747,9 @@ def resolve(curation, payloads, labels=None, district_of=None):
             row = {
                 "key": oid, "name": (op.get("name") or "").strip(),
                 "kind": kind, "label": labels.get(kind, kind),
+                # Kategori yang dipilih kurator; turunan jenis hanya bila
+                # berkas kurasi lama belum memuatnya.
+                "category": (op.get("category") or KIND_CATEGORY.get(kind) or ""),
                 "lat": op.get("lat"), "lon": op.get("lon"),
                 "village": kel,
                 "district": district_of.get(kel, ""),
@@ -781,12 +828,19 @@ def resolve(curation, payloads, labels=None, district_of=None):
         st = dict(op.get("set") or {})
         if form == "add":
             changes = []
-            for k in ("name", "kind", "lat", "lon"):
+            for k in ("name", "kind", "lat", "lon", "category"):
                 if k in st:
                     changes.append([k, row.get(k), st[k]])
                     row[k] = st[k]
             if "kind" in st:
                 row["label"] = labels.get(st["kind"], st["kind"])
+                # Ganti jenis = ganti kategori bawaan, kecuali kurator sudah
+                # memilih kategori lain secara eksplisit.
+                derived = KIND_CATEGORY.get(st["kind"])
+                if derived and "category" not in st:
+                    if row.get("category") != derived:
+                        changes.append(["category", row.get("category"), derived])
+                    row["category"] = derived
             out["preview"]["pois"].append({
                 "id": oid, "op": "set", "status": "gabung", "layer": KURASI_LAYER,
                 "key": row["key"], "name": row["name"], "changes": changes,

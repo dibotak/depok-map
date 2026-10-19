@@ -2,7 +2,7 @@
    Rebuild with: python3 scripts/build-puskesmas.py */
 window.DEPOK_PUSKESMAS = {
  "source": "Daftar resmi portal Puskesmas Dinkes Kota Depok (37 puskesmas, 11 kecamatan). Pin dari OpenStreetMap dan Google Maps; jadwal 24 jam dari Dinkes (Maret 2025).",
- "generated": "2026-10-11T17:03:01Z",
+ "generated": "2026-10-18T14:57:08Z",
  "counts": {
   "total": 37,
   "placed": 37,
@@ -433,7 +433,7 @@ window.DEPOK_PUSKESMAS = {
    "key": "abadijaya",
    "name": "UPTD Puskesmas Abadijaya",
    "kind": "UPTD",
-   "district": "Sukmajaya",
+   "district": "Sukma Jaya",
    "address": "Jalan Kejayaan",
    "phone": "",
    "opening_hours": "",
@@ -448,7 +448,7 @@ window.DEPOK_PUSKESMAS = {
    "key": "bhaktijaya",
    "name": "UPTD Puskesmas Bhaktijaya",
    "kind": "UPTD",
-   "district": "Sukmajaya",
+   "district": "Sukma Jaya",
    "address": "",
    "phone": "",
    "opening_hours": "",
@@ -463,7 +463,7 @@ window.DEPOK_PUSKESMAS = {
    "key": "sukmajaya",
    "name": "UPTD Puskesmas Sukmajaya",
    "kind": "UPTD",
-   "district": "Sukmajaya",
+   "district": "Sukma Jaya",
    "address": "",
    "phone": "",
    "opening_hours": "",

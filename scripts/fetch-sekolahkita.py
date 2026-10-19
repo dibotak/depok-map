@@ -32,9 +32,10 @@ Two details that cost a wrong turn each, and are easy to get wrong again:
   * `page` is 0-based. Page 1 skips the first 100 rows.
 
 Only `full-detail` carries coordinates, and the list row does not have them at
-all, so coordinates cost one request per school. Every level (SD, SMP, SMA,
-TK, ...) is fetched and kept in the cache; `build-schools-kemdik.py` decides
-which levels end up in the app.
+all, so coordinates cost one request per school. Every level (PAUD/TK, SD/MI,
+SMP/MTs, SMA/SMK/MA, SLB, non-formal) is fetched and kept in the cache: the
+app's Pendidikan category shows the full spectrum, and
+`build-schools-sekolahkita.py` renders every level it is given.
 
 Rate limiting
 -------------
@@ -49,8 +50,7 @@ deliberately conservative rather than fast:
     that is only cheap because of this cache.
   * A descriptive User-Agent, so the ministry can identify and contact us.
 
-Run it with --refresh to ignore the cache for details, or --all-levels to also
-walk every education level (much larger; not needed for the app).
+Run it with --refresh to ignore the cache for details.
 """
 from __future__ import annotations
 
@@ -68,8 +68,14 @@ UA = "depok-map-school-builder/1.0 (civic map data; https://github.com/dibotak/d
 CACHE = Path(__file__).resolve().parent.parent / ".cache" / "sekolah"
 
 CITY = "Kota Depok"
-# The app shows secondary schools. MA is grouped with SMA/SMK in the sidebar.
-SECONDARY = ("SMA", "SMK", "MA")
+# Every bentuk_pendidikan the portal lists in Kota Depok. The app's Pendidikan
+# category groups them into PAUD/TK, SD/MI, SMP/MTs, SMA/SMK/MA, SLB and
+# non-formal (Kursus/PKBM/SKB); nothing is fetched that the app then drops,
+# so the partner cache and the payload cover the same universe of schools.
+LEVELS = ("KB", "TK", "RA", "SPS", "PAUDQ", "TPA", "SD", "MI",
+          "SMP", "MTs", "SMA", "SMK", "MA", "SLB",
+          "Kursus", "PKBM", "SKB", "SPK SD", "SPK SMP", "SPK SMA",
+          "SPM Ulya", "SPM Wustha")
 
 LIST_WAIT = 0.6
 DETAIL_WAIT = 0.45
@@ -186,18 +192,16 @@ def main() -> None:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--refresh", action="store_true",
                     help="ignore the detail cache and refetch")
-    ap.add_argument("--all-levels", action="store_true",
-                    help="fetch details for every education level, not just secondary")
     args = ap.parse_args()
 
     rows = fetch_list()
     if not rows:
         sys.exit("no schools fetched")
 
-    targets = rows if args.all_levels else [r for r in rows
-                                           if r.get("bentuk_pendidikan") in SECONDARY]
-    print(f"details: {len(targets)} schools"
-          + (" (all levels)" if args.all_levels else " (SMA/SMK/MA)"))
+    # The cache holds every level; rows the portal lists outside LEVELS would be
+    # dropped by the build anyway, so they are not fetched at all.
+    targets = [r for r in rows if r.get("bentuk_pendidikan") in LEVELS]
+    print(f"details: {len(targets)} schools ( semua jenjang )")
 
     ok = 0
     t0 = time.time()

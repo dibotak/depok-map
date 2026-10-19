@@ -31,13 +31,22 @@ to put on a map:
    further out is dropped as unusable.
 
 Level and label come from `bentuk_pendidikan`, which the portal gives directly
-("SMA", "SMK", "MA"), so unlike the previous scrape there is no need to guess a
-level out of the school's name or to drop the ones that are ambiguous.
+("SD", "SMP", "SMA", "TK", ...), so unlike the previous scrape there is no need
+to guess a level out of the school's name or to drop the ones that are
+ambiguous.
+
+The app's Pendidikan category shows the full spectrum, so every level the
+portal lists is exported. Each row carries a `family` -- the six groups the
+sidebar shows (PAUD/TK, SD/MI, SMP/MTs, SMA/SMK/MA, SLB, Kursus & PKBM).
+Families exist so the sidebar can open one jenjang at a time: 2,871 rows is
+too many to render at once, and "SMA" and "SMK" are more useful to a reader
+than the portal's own "SPK SMA" corner cases.
 """
 from __future__ import annotations
 
 import json
 import re
+import sys
 from collections import Counter
 from pathlib import Path
 
@@ -49,7 +58,27 @@ DEPOK = json.loads((ROOT / "public" / "data" / "depok-kelurahan.json").read_text
 # schools are 30m and 423m out because our village polygons are coarse at the
 # edge; anything past this is a different place, not a rounding artefact.
 MAX_OFF_CITY_M = 2000.0
-SECONDARY = ("SMA", "SMK", "MA")
+
+# bentuk_pendidikan -> sidebar family. Every value the portal lists in Depok is
+# mapped; a level with no family would be silently dropped from the app (see
+# main()), so this table is meant to be exhaustive, not illustrative.
+FAMILIES = {
+    "KB": "PAUD/TK", "TK": "PAUD/TK", "RA": "PAUD/TK",
+    "SPS": "PAUD/TK", "PAUDQ": "PAUD/TK", "TPA": "PAUD/TK",
+    "SD": "SD/MI", "MI": "SD/MI", "SPK SD": "SD/MI",
+    "SMP": "SMP/MTs", "MTs": "SMP/MTs", "SPK SMP": "SMP/MTs",
+    "SPM Wustha": "SMP/MTs",
+    "SMA": "SMA/SMK/MA", "SMK": "SMA/SMK/MA", "MA": "SMA/SMK/MA",
+    "SPK SMA": "SMA/SMK/MA", "SPM Ulya": "SMA/SMK/MA",
+    "SLB": "SLB",
+    "Kursus": "Kursus & PKBM", "PKBM": "Kursus & PKBM", "SKB": "Kursus & PKBM",
+}
+FAMILY_ORDER = ("PAUD/TK", "SD/MI", "SMP/MTs", "SMA/SMK/MA", "SLB",
+                "Kursus & PKBM")
+
+# Portal kecamatan spelling -> the boundary layer's (public/data, data.js).
+# Only one kecamatan differs; the map groups point panels by this string.
+KEC_CANON = {"Sukmajaya": "Sukma Jaya"}
 
 # Manual research for schools the portal publishes without a usable point.
 # Every entry in scripts/data/school-coordinates.json is either a verified
@@ -176,8 +205,12 @@ def norm_name(s: str) -> str:
 
 def main() -> None:
     rows = json.loads((CACHE / "depok-all.json").read_text())
-    rows = [r for r in rows if r.get("bentuk_pendidikan") in SECONDARY]
-    print(f"secondary schools from the portal: {len(rows)}")
+    unknown = sorted({r.get("bentuk_pendidikan") or "" for r in rows}
+                     - set(FAMILIES))
+    if unknown:
+        sys.exit(f"bentuk_pendidikan tanpa family: {unknown} — "
+                 "tambahkan ke FAMILIES sebelum membangun")
+    print(f"schools from the portal: {len(rows)}")
 
     out, stats, notes = [], Counter(), Counter()
     for row in rows:
@@ -211,6 +244,7 @@ def main() -> None:
         stats["placed" if placed else "unplaced"] += 1
 
         jenjang = row.get("bentuk_pendidikan") or ""
+        kec = (row.get("kecamatan") or "").replace("Kec. ", "").strip()
         # status_sekolah is "NEGERI"/"SWASTA". Lowercase it: the map UI groups and
         # compares on it, and the canonical model's enum is lowercase. label and
         # operator still title-case for display.
@@ -226,6 +260,8 @@ def main() -> None:
             # field name the map UI and the canonical model both read.
             "level": jenjang,
             "jenjang": jenjang,
+            # The sidebar group this row lands in. See FAMILIES.
+            "family": FAMILIES[jenjang],
             "status": status,
             "operator": status.title(),
             # The portal's own alamat_jalan usually already ends in "RT.xx/RW.xx",
@@ -246,7 +282,7 @@ def main() -> None:
             # the official kecamatan is still worth showing, so the card keeps its
             # hierarchy instead of collapsing to a bare address.
             "village": village_of(lon, lat) if placed else "",
-            "district": (row.get("kecamatan") or "").replace("Kec. ", "").strip(),
+            "district": KEC_CANON.get(kec, kec),
             "kelurahan": (row.get("nama_dusun") or "").strip(),
             "lon": lon,
             "lat": lat,
@@ -259,12 +295,13 @@ def main() -> None:
         })
 
     src = (f"Kemendikdasmen Sekolah Kita (sekolah.data.kemendikdasmen.go.id) -- "
-           f"{len(out)} sekolah with official NPSN, address, jenjang, status and "
-           f"coordinates. {stats['placed'] - stats['dari riset manual']} titik "
-           f"dari portal; {stats['dari riset manual']} titik riset manual "
+           f"{len(out)} sekolah semua jenjang dengan NPSN, alamat, jenjang, status "
+           f"dan koordinat resmi. {stats['placed'] - stats['dari riset manual']} "
+           f"titik dari portal; {stats['dari riset manual']} titik riset manual "
            f"(scripts/data/school-coordinates.json); {stats['unplaced']} sekolah "
            f"masih tanpa pin.")
-    js_rows = sorted(out, key=lambda r: (r["label"], r["name"]))
+    fam_index = {f: i for i, f in enumerate(FAMILY_ORDER)}
+    js_rows = sorted(out, key=lambda r: (fam_index[r["family"]], r["name"]))
     payload = {"source": src, "generated": "scripts/build-schools-sekolahkita.py",
                "schools": js_rows}
     # Kurasi Studio Atlas (scripts/data/curated.json) ditumpuk di sini.
@@ -280,7 +317,8 @@ def main() -> None:
 
     print(f"\nplaced {stats['placed']} / {stats['unplaced']} without a point"
           f"  (titik riset manual: {stats['dari riset manual']})")
-    print("labels:", dict(Counter(r["label"] for r in out)))
+    print("families:", dict(Counter(r["family"] for r in out)))
+    print("jenjang:", dict(Counter(r["jenjang"] for r in out)))
     print("unique NPSN:", len({r["npsn"] for r in out}), "of", len(out))
     if notes:
         print("coordinate notes:", dict(notes))

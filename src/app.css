@@ -544,6 +544,19 @@ body.card-collapsed .card { padding-bottom: 10px; }
 }
 .road-row.is-dead { opacity: .5; }
 .road-row.is-dead .rr-name { font-style: italic; }
+/* Selected point row. Same treatment as a selected road tick (.is-on), under
+   its own class because the point panels are the sixth and later users of the
+   row and their selection is not a road's. */
+.road-row.is-sel { color: var(--ink); font-weight: 620; background: var(--bg); }
+/* The (kurasi) tag on a curated row. Fuchsia is the one accent no pin family
+   uses any more, and dashed so a curated row reads as an annotation on the
+   register rather than another kind of row. */
+.road-row .rr-kurasi {
+  flex: none; font-size: 9px; font-weight: 700; letter-spacing: .04em;
+  text-transform: uppercase; padding: 2px 5px; border-radius: 4px;
+  color: #a21caf; border: 1px dashed #a21caf;
+}
+html[data-theme="dark"] .road-row .rr-kurasi { color: #e879f9; border-color: #e879f9; }
 .road-empty { padding: 10px 13px 12px 26px; font-size: 12px; color: var(--faint); }
 
 /* --- collapsible list groups --- */
@@ -962,39 +975,42 @@ html[data-theme="dark"] .trans-warn { color: #fbbf24; }
 }
 .tog input:checked + i::after { transform: translateX(14px); background: #fff; }
 .tog input:focus-visible + i { box-shadow: 0 0 0 3px var(--accent-soft); }
-/* Per-section accents: violet for routes, teal for schools, rose for
-   puskesmas, lime for faskes, blue for flood reports — the same colours the
-   map layers and detail cards already use, so the switch never reads as a
-   third, unrelated accent. */
+/* Per-section accents: each category's switch borrows the colour of the pin
+   family it turns on, so the switch never reads as a third, unrelated accent.
+   Kesehatan & darurat covers three families on the map and takes the rose of
+   its register half; the darurat amber would read as a warning light for a
+   toggle that is not one. */
 #panel-transport { --tog-accent: #6d28d9; }
-#panel-school { --tog-accent: #0f766e; }
-#panel-puskes { --tog-accent: #b91c1c; }
-#panel-faskes { --tog-accent: #4d7c0f; }
-#panel-flood { --tog-accent: #1d4ed8; }
-#panel-kurasi { --tog-accent: #a21caf; }
+#panel-pendidikan { --tog-accent: #0f766e; }
+#panel-kesehatan { --tog-accent: #b91c1c; }
+#panel-ibadah { --tog-accent: #6b21a8; }
+#panel-dagang { --tog-accent: #9d174d; }
+#panel-ruang { --tog-accent: #0891b2; }
+#panel-lainnya { --tog-accent: #1d4ed8; }
 html[data-theme="dark"] #panel-transport { --tog-accent: #a78bfa; }
-html[data-theme="dark"] #panel-school { --tog-accent: #2dd4bf; }
-html[data-theme="dark"] #panel-puskes { --tog-accent: #fb7185; }
-html[data-theme="dark"] #panel-faskes { --tog-accent: #a3e635; }
-html[data-theme="dark"] #panel-flood { --tog-accent: #60a5fa; }
-html[data-theme="dark"] #panel-kurasi { --tog-accent: #e879f9; }
+html[data-theme="dark"] #panel-pendidikan { --tog-accent: #2dd4bf; }
+html[data-theme="dark"] #panel-kesehatan { --tog-accent: #fb7185; }
+html[data-theme="dark"] #panel-ibadah { --tog-accent: #c084fc; }
+html[data-theme="dark"] #panel-dagang { --tog-accent: #f9a8d4; }
+html[data-theme="dark"] #panel-ruang { --tog-accent: #67e8f9; }
+html[data-theme="dark"] #panel-lainnya { --tog-accent: #60a5fa; }
 
-/* ---------- secondary schools ---------- */
-/* Teal, a fourth colour family alongside the green admin areas, orange roads
-   and violet routes, so a school pin is never mistaken for a selection of
-   something else. */
+/* ---------- category cards ---------- */
+/* Every card carries the accent of the pin family it belongs to. The school
+   card is teal, the faskes card lime, the flood card blue; the POI card is
+   shared by four categories plus curated rows, so its accent is set per
+   selection in renderPoiCard rather than here. */
 #school-detail { --road-c: #0f766e; }
 html[data-theme="dark"] #school-detail { --road-c: #2dd4bf; }
-
-/* Faskes (lime) and flood-report (blue) cards carry the accent of the pin
-   family they belong to, like the schools and puskesmas cards do. Curator
-   points (fuchsia) do the same. */
+#puskes-detail { --road-c: #b91c1c; }
+html[data-theme="dark"] #puskes-detail { --road-c: #fb7185; }
 #faskes-detail { --road-c: #4d7c0f; }
 html[data-theme="dark"] #faskes-detail { --road-c: #a3e635; }
 #flood-detail { --road-c: #1d4ed8; }
 html[data-theme="dark"] #flood-detail { --road-c: #60a5fa; }
-#kurasi-detail { --road-c: #a21caf; }
-html[data-theme="dark"] #kurasi-detail { --road-c: #e879f9; }
+/* Fallback accent before a selection ever sets one — the ruang cyan. */
+#poi-detail { --road-c: #0891b2; }
+html[data-theme="dark"] #poi-detail { --road-c: #67e8f9; }
 
 /* ---------- schools ---------- */
 /* A 250-row list needs a filter box. Sized like the top search bar and reusing

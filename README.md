@@ -29,8 +29,8 @@ Connect the repo in the Pages dashboard with:
 The build command prunes the two things the site never loads: `public/data/`
 (874 KB of source JSON for the build scripts) and `scripts/`. Neither is
 referenced by `index.html` or `app.js` — `src/data.js` is the only boundary
-data the browser fetches, so pruning them is safe and leaves **~3.1 MB** to
-publish.
+data the browser fetches, so pruning them is safe and leaves **~5.1 MB** to
+publish (the schools payload alone is 1.7 MB of the total).
 
 Cloudflare Pages has no ignore file for Git-based deploys, so pruning has to
 happen in the build command. `rm -rf` is safe here because the whole repo is
@@ -45,31 +45,42 @@ would 404 every asset — use `map.dibotak.com`, not a subpath.
 
 ## What it does
 
-- **Sidebar with seven collapsible sections**, opened by the **icon-only**
+- **Sidebar with nine collapsible sections**, opened by the **icon-only**
   button beside the search bar on the same row. The button carries no text —
   its `aria-label` ("Buka daftar wilayah dan jalan" / "Tutup daftar") is the
-  only name, and it flips with state. *Wilayah* lists all 11 kecamatan with
-  their child counts; opening one appends its kelurahan underneath, and the
-  current selection stays highlighted as you click through the map. *Jalan*
-  lists the 77 official ruas grouped by class. *Transport* lists angkot routes
-  grouped by trayek. *SMA/SMK* lists 242 secondary schools. *Puskesmas* lists
-  the 37 facilities in the Dinkes register. *Faskes* adds the 82 facilities
-  OpenStreetMap knows outside that register, and *Banjir* the 8 curated
+  only name, and it flips with state. Three are structural: *Wilayah* lists all
+  11 kecamatan with their child counts — opening one appends its kelurahan
+  underneath, and the current selection stays highlighted as you click through
+  the map; *Jalan* lists the 77 official ruas grouped by class; *Transport*
+  lists angkot routes grouped by trayek. Five are the point categories of the
+  shared Atlas Spasial taxonomy: *Pendidikan* (the 2,871 schools from the
+  ministry register in six families, plus the 36 OSM campuses), *Kesehatan &
+  darurat* (37 puskesmas + 82 faskes + 18 OSM police posts and fire stations),
+  *Tempat ibadah* (266 OSM places of worship), *Perdagangan* (245 OSM markets,
+  shops and banks) and *Ruang terbuka* (124 OSM parks, sports facilities and
+  cemeteries). The ninth, *Lainnya*, holds *Banjir* — the 8 curated
   flood-report points. Tapping the open section collapses it, so the map gets
   the column back.
-  - **Accordion, not tabs.** A tab strip could not hold seven labels: it
-    overflowed the 316px sidebar before they even all existed (~346px for
-    four), and `.side-tab { flex: 1 }` without `min-width: 0` could not shrink
-    below its content, pushing the 40px theme button on top of the strip.
-    Stacked headers wrap by nature, collapsed sections sit as quiet headers
-    between open ones, and `setTab()` is the single owner of the open state —
-    exactly one panel is ever open.
-- **Every point answers a map click, in both directions.** A click on a school,
-  puskesmas, faskes or flood pin is the same action as clicking that row in the
-  sidebar: the map flies to it, its card opens, and the sidebar switches to the
-  matching section with the row highlighted and scrolled into view. The pin
-  takes the whole click — the kecamatan/kelurahan underneath does not also
-  react, because a pin plus an area in one click would fight over the card slot.
+  - **Accordion, not tabs.** A tab strip could not hold even the four labels it
+    first shipped with: they overflowed the 316px sidebar (~346px for four),
+    and `.side-tab { flex: 1 }` without `min-width: 0` could not shrink below
+    its content, pushing the 40px theme button on top of the strip. The same
+    arithmetic makes a strip impossible at nine. Stacked headers wrap by
+    nature, collapsed sections sit as quiet headers between open ones, and
+    `setTab()` is the single owner of the open state — exactly one panel is
+    ever open.
+  - **One engine, six panels.** The five category panels and *Lainnya* all
+    render through one row model and one `renderPanel()` (see *One list
+    engine* below), which is why a curated point and a register entry share
+    their row markup, their search, their lazy groups and their highlight.
+- **Every point answers a map click, in both directions.** A click on any
+  category pin — school, puskesmas, faskes, police/fire station, place of
+  worship, market, park, curated point or flood report — is the same action as
+  clicking that row in the sidebar: the map flies to it, its card opens, and
+  the sidebar switches to the matching section with the row highlighted and
+  scrolled into view. The pin takes the whole click — the kecamatan/kelurahan
+  underneath does not also react, because a pin plus an area in one click would
+  fight over the card slot.
 - **Area select has its own toggle**, the second round button in the topbar's
   left column, right under the sidebar button (on by default, remembered like
   the theme). Off, bare map clicks leave the polygons alone, so pins can be
@@ -164,9 +175,11 @@ src/app.css           theme tokens (light/dark) + all styling
 src/data.js           generated — 74 features as window.DEPOK
 src/roads.js          generated — 77 ruas as window.DEPOK_ROADS (committed)
 src/transport.js      generated — angkot routes as window.DEPOK_TRANSPORT
-src/schools.js        generated — 242 schools as window.DEPOK_SCHOOLS
+src/schools.js        generated — 2,871 schools as window.DEPOK_SCHOOLS
 src/puskesmas.js      generated — 37 Dinkes facilities as window.DEPOK_PUSKESMAS
 src/faskes.js         generated — 82 OSM health facilities as window.DEPOK_FASKES
+src/poi.js            generated — 689 OSM category points as window.DEPOK_POI
+src/kurasi.js         generated — curated points as window.DEPOK_KURASI
 src/flood.js          generated — 8 curated flood reports as window.DEPOK_FLOOD
 public/data/          generated — the boundaries as JSON, build input only
 vendor/maplibre-gl.*  MapLibre GL JS 5.6 (vendored, no CDN at runtime)
@@ -194,12 +207,29 @@ experiment, and one-off endpoint probes live in a separate private checkout at
 `~/projects/depok-map-lab`, alongside this one. The lab reads `src/*.js` from
 here; nothing here reads from the lab.
 
-## Secondary schools
+## Schools: the ministry register, all levels
 
 `scripts/fetch-sekolahkita.py` + `scripts/build-schools-sekolahkita.py` ->
-`src/schools.js`. **242 schools; 241 carry a pin** — 224 from the portal's own
-coordinates plus 17 recovered by hand (below), and one left unpinned on purpose
-rather than guessed onto the map.
+`src/schools.js`. **2,871 schools, the portal's full Depok list across all 22
+`bentuk_pendidikan`; 2,253 carry a pin** — 2,236 from the portal's own
+coordinates plus 17 recovered by hand (below). 618 rows have no point: 536 the
+portal publishes without one, 81 whose published coordinate fails the city
+test, and one deliberately left unpinned rather than guessed onto the map.
+
+The sidebar groups them into the six families the register itself implies:
+
+| Family | n | jenjang folded in |
+|---|---|---|
+| PAUD/TK | 1,376 | KB, TK, RA, SPS, PAUDQ, TPA |
+| SD/MI | 587 | SD, MI, SPK SD |
+| SMP/MTs | 358 | SMP, MTs, SPK SMP, SPM Wustha |
+| SMA/SMK/MA | 244 | SMA, SMK, MA, SPK SMA, SPM Ulya |
+| SLB | 10 | SLB |
+| Kursus & PKBM | 296 | Kursus, PKBM, SKB |
+
+An unknown `bentuk_pendidikan` is a **hard error** in the build, not a skipped
+row: a new level appearing on the portal must get a family, or it would vanish
+from the map silently.
 
 ### The API
 
@@ -231,47 +261,49 @@ read as secondary.
 
 This portal publishes `lintang`/`bujur` per school. No geocoding, no string
 matching, no false positives, and a real point for schools with no OSM presence
-at all. Coordinate count went **21 -> 224** at this stage, then on to **241**
-once the leftover 17 were researched by hand (below).
+at all. Coordinate count went **21 -> 224** for secondary schools at this
+stage, then on to **2,236** once the fetch was widened to every level, and
+**2,253** after the leftover 17 were researched by hand (below).
 
-It is also more complete: 242 secondary schools versus the scrape's 250 rows
-across a slightly different jenjang mix, and `bentuk_pendidikan` is given
-directly, so level no longer has to be guessed from the name or dropped for
-being ambiguous.
-
-| | SMA Negeri | SMA Swasta | SMK Negeri | SMK Swasta | MA Swasta |
-|---|---|---|---|---|---|
-| count | 15 | 68 | 5 | 120 | 34 |
+It is also more complete than the earlier scrape: 2,871 schools versus the
+scrape's 250 secondary rows, and `bentuk_pendidikan` is given directly, so
+level no longer has to be guessed from the name or dropped for being ambiguous.
 
 ### Coordinates are official, but not perfect
 
 Three checks decide whether a point is trusted:
 
-1. **Zero is not a location.** 18 schools come back as `0/0`, the portal's way
-   of saying it has no point. Kept in the list with their address, no pin.
+1. **Zero is not a location.** 536 schools come back without any usable
+   coordinate (or as `0/0`), the portal's way of saying it has no point. Kept
+   in the list with their address, no pin.
 2. **Latitude sign.** `SMAS IT AL-QUDWAH` (Beji) is published at latitude
    **+6.3856** -- valid for Indonesia, 1,400km from Depok. Negating it lands
    106m inside the city in Kemirimuka, so it is a dropped minus sign in the
    source and is corrected. The test is the *city polygon*, not a latitude
    range: a range check cannot catch this, because +6.38 is a real latitude
    somewhere in Indonesia. What gives it away is that the point misses the city
-   and its negation does not.
-3. **Proximity.** A point more than 2km outside the city is refused. Two
-   schools sit 30m and 423m outside because our village polygons are coarse at
-   the edge, and both are kept.
+   and its negation does not. Nine rows have their sign corrected this way.
+3. **Proximity.** A point more than 2km outside the city is refused — 76 are,
+   and their rows say how far the pin would have been (`koordinat 838 km di
+   luar Kota Depok` is the largest cluster at 52: the portal carries another
+   city's coordinate for the school). Five more are rejected for values outside
+   the latitude/longitude range altogether. Two schools sit 30m and 423m
+   outside because our village polygons are coarse at the edge, and both are
+   kept.
 
 Near-null-island values (`|lat| < 0.01 and |lon| < 0.01`) count as missing.
 `MAS ULUMUL QUR'AN` is published at `0.0009, -0.0013` -- about 11,900km away --
 and "koordinat 11901 km di luar Kota Depok" on a card would be true and useless.
 
-### The 18 the portal could not place
+### The 618 the register cannot place
 
-After the sign fix and the zero/near-zero test, 18 schools still had no point of
-their own. All 18 were resolved by hand or explicitly parked, and the outcome is
-checked in as a small override file rather than patched into the build:
-`scripts/data/school-coordinates.json` maps NPSN -> `{lat, lon, pin_src,
-source}`. The builder merges it over the portal rows, and `pin_src` rides along
-into `src/schools.js` so the card can say where a pin came from:
+536 schools have no coordinate in the portal, 76 sit outside the city, five
+carry impossible values and one is parked on purpose. Of those, 17 were
+resolved by hand and the outcome is checked in as a small override file rather
+than patched into the build: `scripts/data/school-coordinates.json` maps NPSN
+-> `{lat, lon, pin_src, source}`. The builder merges it over the portal rows,
+and `pin_src` rides along into `src/schools.js` so the card can say where a pin
+came from:
 
 | `pin_src` | n | where the point comes from |
 |---|---|---|
@@ -281,7 +313,7 @@ into `src/schools.js` so the card can say where a pin came from:
 
 No coordinate is invented: each `source` names the page the point was read
 from, and the test is still the city polygon plus proximity, not trust in the
-field. Seventeen of the eighteen survived it.
+field. Seventeen of the eighteen researched points survived it.
 
 The eighteenth — **SMK Negeri 5**, in Meruyung/Limo — is deliberately left
 unpinned. Its building is not built yet (the fasos/fasum land in Cinere
@@ -290,28 +322,41 @@ classes currently borrow space at SMAN 6 / SMKN 2), so any pin would be a guess
 about a field. It keeps its row with a `no pin` badge, and the override file
 carries the same note, so the gap reads as a gap rather than a bug.
 
+The remaining **601 rows stay in the list without a pin** — with family, level,
+address and NPSN, searchable and clickable, just not drawn. That is a deliberate
+choice: their absence from the map is the register's gap, and the panel notes
+say how many are missing.
+
 ### Rate limiting
 
-Nothing was throttled: 29 list requests and 242 detail requests in 134s, no
-429s. The policy is deliberately conservative anyway -- 0.45s between detail
-requests, 0.6s between pages, exponential backoff on 429/503 with the error
-surfaced rather than swallowed, and a descriptive User-Agent.
+Nothing was throttled: 2,871 detail requests in 1,568s (~0.55s each), no 429s
+and no 503s. The policy is deliberately conservative anyway — 0.45s between
+detail requests, 0.6s between pages, exponential backoff on 429/503 with the
+error surfaced rather than swallowed, and a descriptive User-Agent.
 
 Every response is cached to `.cache/sekolah/` by `sekolah_id`, so a rebuild
 makes no network requests. That is what makes the output checkable: a warm
-rebuild is ~1s and byte-identical, verified by rerunning and diffing.
+rebuild is ~10s and byte-identical, verified by rerunning and diffing.
+
+```bash
+python3 scripts/fetch-sekolahkita.py           # warm: cache only, no network
+python3 scripts/build-schools-sekolahkita.py   # -> src/schools.js
+```
 
 ### UI
 
-`hasPoint()` gates every GeoJSON path, since one record has `lon: null` and
-would otherwise produce an invalid feature and break `fitBounds`. That row gets
-a `no pin` badge and a card reading why the pin is missing. Cards carry
-6+ facts: address, kelurahan, postcode, coordinates, source id, NPSN.
+`hasPin()` gates every GeoJSON path: 618 records have no usable point, and one
+without would otherwise produce an invalid feature and break `fitBounds`. Those
+rows get a `no pin` badge and a card that reads why the pin is missing. Cards
+carry 6+ facts: address, kelurahan, postcode, coordinates, source id, NPSN,
+family and jenjang.
 
-## Health facilities: an official layer and an OSM complement
+## Health: the Dinkes register and its OSM complements
 
-Two layers answer two different questions, and the sidebar keeps them apart
-rather than merging them into one list of pins with mixed authority.
+*Kesehatan & darurat* is one panel with three sources, kept apart by row badge
+rather than by panel: the official register, the OSM health complement, and the
+OSM emergency places (police, fire stations) that the category needs but no
+health register covers.
 
 **Puskesmas** (`scripts/build-puskesmas.py` -> `src/puskesmas.js`) is the
 official register: 37 facilities grouped under 11 kecamatan, from
@@ -323,6 +368,11 @@ address/phone/hours tags), then Google Maps for the rows OSM misses, with
 geo source is emitted without a pin, never guessed at a kelurahan centroid. The
 24-hour flag comes from the Dinkes schedule (Mar 2025) — exactly one UPTD per
 kecamatan, a cheap consistency check on the parse.
+
+The portal writes the kecamatan as "Sukmajaya" while the boundary layer (and
+therefore every other payload) writes "Sukma Jaya"; the builder normalises it,
+because the panel groups rows by that exact string and one kecamatan with two
+spellings would read as two.
 
 The WAF is worth knowing about, because it shapes the build: the interactive
 facility map (`dsw.depok.go.id`) and every per-facility `pkm*.depok.go.id`
@@ -350,6 +400,70 @@ The payload's `source` string repeats the caveat the sidebar note also carries:
 completeness is OSM's, so a facility missing from this layer is *unmapped*, not
 non-existent.
 
+## The four OSM categories
+
+`scripts/build-poi.py` -> `src/poi.js` builds the four point categories that no
+local register covers, from one Overpass sweep of the city:
+
+| Category | Panel | kinds | n |
+|---|---|---|---|
+| `tempat-ibadah` | Tempat ibadah | place_of_worship | 266 |
+| `perdagangan` | Perdagangan | marketplace, perdagangan/shop, bank | 245 |
+| `ruang-terbuka` | Ruang terbuka | park, fasilitas_olahraga, kuburan | 124 |
+| `kesehatan-darurat` | Kesehatan & darurat | police, fire_station | 18 |
+| `pendidikan` | Pendidikan | college, university | 36 |
+
+The categories are the Atlas Spasial taxonomy — the same five slugs the
+`ensiklopedia-kota` site uses (`pendidikan`, `kesehatan-darurat`,
+`tempat-ibadah`, `perdagangan`, `ruang-terbuka`), so a curated point from the
+studio lands in the same panel as its OSM neighbours.
+
+The build keeps the same discipline as the faskes one: unnamed objects are
+dropped (744 of them — a pin that cannot be labelled is noise on a printed
+map), points outside the city polygon are dropped and counted (1,696, almost
+all because the Overpass bbox reaches into the neighbouring cities), and the
+same kind + name within 120m collapses to the richer record (18 collapsed).
+Rows carry `religion`/`denomination`, `subkind` and a display `badge`, so a
+`convenience` shop reads "Minimarket", a `mall` reads "Mal", a
+`sports_centre` reads "Olahraga" and a `playground` "Taman bermain" — the row
+and the card say what the point actually is, not what the tag is called.
+Responses are cached to `/tmp/depok-poi-cache.json` for a day; `POI_REFRESH=1`
+forces a refetch.
+
+## One list engine, six panels
+
+The five category panels and *Lainnya* are not six implementations. Every point
+payload is flattened into one row model (`{key, name, badge, group, chips, hay,
+panel, src, kind, data, kurasi}`) at boot, and a single `renderPanel()` builds
+each panel's groups, rows, counts, search matching and empty state from it. The
+engine is why a curated point and a 2,871-row register can share markup:
+
+- **`src` is the pin family**, and it decides which map layer a row draws in
+  and which accent its card takes: `school` (teal), `puskes`/`faskes` (rose,
+  lime), `darurat`/`ibadah`/`dagang`/`ruang` (amber, violet, magenta, cyan),
+  `flood` (blue), plus fuchsia for a curated row's card. The kesehatan panel
+  holds three families at once, which is why the model carries a family per row
+  rather than per panel.
+- **Selection is one row, not one per layer.** `selectPoint(key)` owns the
+  highlighted row, the selected marker (pushed into the family's selected
+  source), the fly-to and the card. `highlightSchool()`/`highlightPuskes()`/
+  `highlightFaskes()`/`highlightFlood()` remain as aliases of `selectPoint`
+  because the deep-link paths already call them.
+- **Groups open lazily where the list is huge.** Pendidikan renders its six
+  family headers up front and materialises a family's rows (1,376 for PAUD/TK)
+  only when that family is opened or searched; the other panels open with their
+  rows already in the DOM.
+- **Cards dispatch on family** (`CARD_OF`), and curated rows always go to the
+  shared POI card whatever their kind: a register card (NPSN, Dinkes schedule)
+  has nothing to say about a point that is not in a register.
+
+The taxonomy itself is defined once per side and kept in sync by hand: the app
+maps `category` -> panel (`PANEL_OF_CATEGORY`) and `kind` -> family
+(`SRC_OF_KIND`), `scripts/curated.py` maps kind -> category for legacy files
+(`KIND_CATEGORY`), and the studio offers the same five slugs. A kind with no
+family mapping still gets its row and a pin in a fallback colour, so a new kind
+is a colour mismatch, never a lost point.
+
 ## Flood reports (PetaBencana.id)
 
 `scripts/build-flood.py` -> `src/flood.js`. A different kind of layer: real
@@ -357,7 +471,9 @@ flood reports for Kota Depok from [PetaBencana.id](https://petabencana.id), the
 crowdsourced hazard platform run by the MIT Urban Risk Lab / Yayasan Peta
 Bencana. Each pin is a report location carrying the original report text, the
 date and — when the reporter gave one — the depth. Pins say "this was reported
-here", not "we measured this", and the card repeats that.
+here", not "we measured this", and the card repeats that. It is the only
+occupant of the sidebar's *Lainnya* section: the five categories above all have
+a register or an OSM layer behind them, and a crowd report is neither.
 
 **The screening is the build.** Depok's feed is dominated by training material:
 GRASP/BNPB simulation rounds (`#TES_Trainer ...`, "Latihan simulasi ..."), HKB
@@ -395,6 +511,7 @@ python3 scripts/build-districts.py  # 11 kecamatan  -> public/data/
 python3 scripts/bundle-data.py      # both          -> src/data.js
 python3 scripts/build-roads.py      # 77 ruas       -> src/roads.js  (Overpass)
 python3 scripts/build-faskes.py     # 82 faskes     -> src/faskes.js (Overpass)
+python3 scripts/build-poi.py        # 689 titik     -> src/poi.js   (Overpass)
 python3 scripts/build-flood.py      # 8 laporan     -> src/flood.js  (offline)
 ```
 
@@ -498,6 +615,7 @@ repos share it: the studio imports this module for its preview.
  "pois": [
   {"id": "titik-1", "op": "add", "layer": "kurasi",
    "row": {"key": "titik-1", "name": "Taman …", "kind": "park", "label": "Taman",
+           "category": "ruang-terbuka",
            "lat": -6.38, "lon": 106.72, "village": "Curug", "district": "Bojongsari"},
    "reason": "…", "source": "…"},
   {"id": "titik-2", "op": "set",    "layer": "faskes", "key": "node-…",
@@ -519,10 +637,17 @@ Rules worth knowing before touching that file:
   level) and the payload header gains a marker line. Emptying the curation and
   re-applying restores every payload byte-for-byte — dropping an edit never
   leaves a fossil behind.
+- **Curated points carry a category, not a layer.** `row.category` is one of
+  the five shared slugs, chosen by the curator in the studio (it defaults to
+  the kind's own category, `KIND_CATEGORY` in `scripts/curated.py`); the point
+  is then listed in that category's panel with a `(kurasi)` tag, drawn in the
+  category's pin family, and its card adds the reason and the source. There is
+  no separate *Kurasi* section any more, and a row whose kind has no natural
+  category (`library`, `townhall`, …) must pick one explicitly — a missing
+  category is a validation error, not a silently dropped point.
 - **Road classes are a badge override, never a re-grouping.** `set-class`
   rewrites the badge to `Lokal (kurasi)` and keeps `badge_perda` beside it; the
-  77 ruas and the Perda's own grouping stay verbatim. Added points always land
-  in the map's *Kurasi* layer (`src/kurasi.js`), nowhere else.
+  77 ruas and the Perda's own grouping stay verbatim.
 - **The studio resolves before writing.** An edit whose target has no
   counterpart here is *skipped and reported* at export time (atlas-only
   landmarks stay in the book); an *ambiguous* match blocks the export (422,
@@ -567,7 +692,7 @@ at the point of export.
 | Source | HDX/BPS `cod-ab-idn` via `JfrAziz/indonesia-district` |
 | Licence | **CC BY-IGO** — attribution required, commercial use fine |
 | Vintage | 2020-04-01 |
-| Size | 854 KB raw / **214 KB gzipped** for both levels |
+| Size | 874 KB raw / **220 KB gzipped** for both levels |
 
 The hierarchy is denormalised into every feature (`district_code`,
 `village_code`), so drilling down is a client-side lookup — no server and no

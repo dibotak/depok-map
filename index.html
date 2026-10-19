@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>depok-map — peta wilayah Kota Depok</title>
-<meta name="description" content="Peta interaktif Kota Depok: pilih kecamatan untuk melihat kelurahan di dalamnya. 63 kelurahan dalam 11 kecamatan, lengkap dengan jalan, transport, sekolah, puskesmas, faskes, riwayat laporan banjir, dan titik kurasi.">
+<meta name="description" content="Peta interaktif Kota Depok: pilih kecamatan untuk melihat kelurahan di dalamnya. 63 kelurahan dalam 11 kecamatan, lengkap dengan jalan, transport, pendidikan, kesehatan & darurat, tempat ibadah, perdagangan, ruang terbuka, dan laporan banjir warga.">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#f7f6f3">
 <link rel="stylesheet" href="/vendor/maplibre-gl.css">
@@ -88,7 +88,7 @@
     </button>
   </div>
 
-  <!-- Accordion, not tabs: the seven sections are stacked collapsible headers.
+  <!-- Accordion, not tabs: the nine sections are stacked collapsible headers.
        One scroller (.side-body) owns the column; the open section's panel
        stretches to fill the remaining height and keeps its own internal
        scroller, sticky note and locate rows unchanged from the tab layout. -->
@@ -160,129 +160,153 @@
       <div id="transport-groups"></div>
     </div>
   </div>
-    <button class="acc-head" id="tab-school" aria-expanded="false"
-            aria-controls="panel-school" type="button">
+    <button class="acc-head" id="tab-pendidikan" aria-expanded="false"
+            aria-controls="panel-pendidikan" type="button">
       <svg class="acc-chev" width="12" height="12" viewBox="0 0 24 24" fill="none"
            stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
-      <span>SMA/SMK</span>
+      <span>Pendidikan</span>
     </button>
-<!-- secondary schools ------------------------------------------------- -->
-  <div class="side-panel" id="panel-school"
-       aria-labelledby="tab-school" hidden>
-    <!-- All points at once, so the gaps in coverage are visible rather than
-         hidden one-behind-another. -->
+<!-- pendidikan: every jenjang from the register, kampus, curated points ---- -->
+  <div class="side-panel" id="panel-pendidikan"
+       aria-labelledby="tab-pendidikan" hidden>
     <div class="side-locate">
       <label class="trans-all">
-        <span class="tog"><input type="checkbox" id="school-all"><i aria-hidden="true"></i></span>
-        <span>Tampilkan semua sekolah</span>
+        <span class="tog"><input type="checkbox" id="pendidikan-all"><i aria-hidden="true"></i></span>
+        <span>Tampilkan semua sekolah &amp; kampus</span>
       </label>
     </div>
-    <div class="side-scroll" id="school-scroll">
-      <p class="side-note" id="school-note"></p>
-      <input class="side-search" id="school-search" type="search"
+    <div class="side-scroll" id="pendidikan-scroll">
+      <p class="side-note" id="pendidikan-note"></p>
+      <input class="side-search" id="pendidikan-search" type="search"
              placeholder="Cari nama sekolah, NPSN, kelurahan..." autocomplete="off"
              aria-label="Cari sekolah">
-      <div id="school-groups"></div>
-      <p class="road-empty" id="school-empty" hidden>Tidak ada sekolah yang cocok.</p>
-    </div>
-  </div>
-    <button class="acc-head" id="tab-puskes" aria-expanded="false"
-            aria-controls="panel-puskes" type="button">
-      <svg class="acc-chev" width="12" height="12" viewBox="0 0 24 24" fill="none"
-           stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
-      <span>Puskesmas</span>
-    </button>
-<!-- puskesmas ---------------------------------------------------------- -->
-  <div class="side-panel" id="panel-puskes"
-       aria-labelledby="tab-puskes" hidden>
-    <div class="side-locate">
-      <label class="trans-all">
-        <span class="tog"><input type="checkbox" id="puskes-all"><i aria-hidden="true"></i></span>
-        <span>Tampilkan semua puskesmas</span>
-      </label>
-    </div>
-    <div class="side-scroll" id="puskes-scroll">
-      <p class="side-note" id="puskes-note"></p>
-      <input class="side-search" id="puskes-search" type="search"
-             placeholder="Cari nama puskesmas, kelurahan..." autocomplete="off"
-             aria-label="Cari puskesmas">
-      <div id="puskes-groups"></div>
-      <p class="road-empty" id="puskes-empty" hidden>Tidak ada puskesmas yang cocok.</p>
+      <div id="pendidikan-groups"></div>
+      <p class="road-empty" id="pendidikan-empty" hidden>Tidak ada yang cocok.</p>
     </div>
   </div>
 
-    <button class="acc-head" id="tab-faskes" aria-expanded="false"
-            aria-controls="panel-faskes" type="button">
+    <button class="acc-head" id="tab-kesehatan" aria-expanded="false"
+            aria-controls="panel-kesehatan" type="button">
       <svg class="acc-chev" width="12" height="12" viewBox="0 0 24 24" fill="none"
            stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
-      <span>Faskes</span>
+      <span>Kesehatan &amp; darurat</span>
     </button>
-<!-- faskes (OSM health facilities) -------------------------------------- -->
-  <div class="side-panel" id="panel-faskes"
-       aria-labelledby="tab-faskes" hidden>
+<!-- kesehatan & darurat: puskesmas + faskes + polisi/damkar + kurasi ------- -->
+  <div class="side-panel" id="panel-kesehatan"
+       aria-labelledby="tab-kesehatan" hidden>
     <div class="side-locate">
       <label class="trans-all">
-        <span class="tog"><input type="checkbox" id="faskes-all"><i aria-hidden="true"></i></span>
-        <span>Tampilkan semua faskes</span>
+        <span class="tog"><input type="checkbox" id="kesehatan-all"><i aria-hidden="true"></i></span>
+        <span>Tampilkan semua puskesmas, faskes &amp; darurat</span>
       </label>
     </div>
-    <div class="side-scroll" id="faskes-scroll">
-      <p class="side-note" id="faskes-note"></p>
-      <input class="side-search" id="faskes-search" type="search"
+    <div class="side-scroll" id="kesehatan-scroll">
+      <p class="side-note" id="kesehatan-note"></p>
+      <input class="side-search" id="kesehatan-search" type="search"
              placeholder="Cari nama, jenis, kelurahan..." autocomplete="off"
              aria-label="Cari fasilitas kesehatan">
-      <div id="faskes-groups"></div>
-      <p class="road-empty" id="faskes-empty" hidden>Tidak ada faskes yang cocok.</p>
+      <div id="kesehatan-groups"></div>
+      <p class="road-empty" id="kesehatan-empty" hidden>Tidak ada yang cocok.</p>
     </div>
   </div>
 
-    <button class="acc-head" id="tab-flood" aria-expanded="false"
-            aria-controls="panel-flood" type="button">
+    <button class="acc-head" id="tab-ibadah" aria-expanded="false"
+            aria-controls="panel-ibadah" type="button">
       <svg class="acc-chev" width="12" height="12" viewBox="0 0 24 24" fill="none"
            stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
-      <span>Banjir</span>
+      <span>Tempat ibadah</span>
     </button>
-<!-- flood reports (PetaBencana.id) --------------------------------------- -->
-  <div class="side-panel" id="panel-flood"
-       aria-labelledby="tab-flood" hidden>
+<!-- tempat ibadah (OpenStreetMap) ------------------------------------------ -->
+  <div class="side-panel" id="panel-ibadah"
+       aria-labelledby="tab-ibadah" hidden>
     <div class="side-locate">
       <label class="trans-all">
-        <span class="tog"><input type="checkbox" id="flood-all"><i aria-hidden="true"></i></span>
+        <span class="tog"><input type="checkbox" id="ibadah-all"><i aria-hidden="true"></i></span>
+        <span>Tampilkan semua tempat ibadah</span>
+      </label>
+    </div>
+    <div class="side-scroll" id="ibadah-scroll">
+      <p class="side-note" id="ibadah-note"></p>
+      <input class="side-search" id="ibadah-search" type="search"
+             placeholder="Cari nama, jenis, kelurahan..." autocomplete="off"
+             aria-label="Cari tempat ibadah">
+      <div id="ibadah-groups"></div>
+      <p class="road-empty" id="ibadah-empty" hidden>Tidak ada yang cocok.</p>
+    </div>
+  </div>
+
+    <button class="acc-head" id="tab-dagang" aria-expanded="false"
+            aria-controls="panel-dagang" type="button">
+      <svg class="acc-chev" width="12" height="12" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+      <span>Perdagangan</span>
+    </button>
+<!-- perdagangan: pasar, bank, toko (OpenStreetMap) ------------------------- -->
+  <div class="side-panel" id="panel-dagang"
+       aria-labelledby="tab-dagang" hidden>
+    <div class="side-locate">
+      <label class="trans-all">
+        <span class="tog"><input type="checkbox" id="dagang-all"><i aria-hidden="true"></i></span>
+        <span>Tampilkan semua titik perdagangan</span>
+      </label>
+    </div>
+    <div class="side-scroll" id="dagang-scroll">
+      <p class="side-note" id="dagang-note"></p>
+      <input class="side-search" id="dagang-search" type="search"
+             placeholder="Cari nama, jenis, kelurahan..." autocomplete="off"
+             aria-label="Cari tempat perdagangan">
+      <div id="dagang-groups"></div>
+      <p class="road-empty" id="dagang-empty" hidden>Tidak ada yang cocok.</p>
+    </div>
+  </div>
+
+    <button class="acc-head" id="tab-ruang" aria-expanded="false"
+            aria-controls="panel-ruang" type="button">
+      <svg class="acc-chev" width="12" height="12" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+      <span>Ruang terbuka</span>
+    </button>
+<!-- ruang terbuka: taman, olahraga, pemakaman (OpenStreetMap) -------------- -->
+  <div class="side-panel" id="panel-ruang"
+       aria-labelledby="tab-ruang" hidden>
+    <div class="side-locate">
+      <label class="trans-all">
+        <span class="tog"><input type="checkbox" id="ruang-all"><i aria-hidden="true"></i></span>
+        <span>Tampilkan semua taman, olahraga &amp; pemakaman</span>
+      </label>
+    </div>
+    <div class="side-scroll" id="ruang-scroll">
+      <p class="side-note" id="ruang-note"></p>
+      <input class="side-search" id="ruang-search" type="search"
+             placeholder="Cari nama, jenis, kelurahan..." autocomplete="off"
+             aria-label="Cari ruang terbuka">
+      <div id="ruang-groups"></div>
+      <p class="road-empty" id="ruang-empty" hidden>Tidak ada yang cocok.</p>
+    </div>
+  </div>
+
+    <button class="acc-head" id="tab-lainnya" aria-expanded="false"
+            aria-controls="panel-lainnya" type="button">
+      <svg class="acc-chev" width="12" height="12" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+      <span>Lainnya</span>
+    </button>
+<!-- lainnya: flood reports (PetaBencana.id) --------------------------------- -->
+  <div class="side-panel" id="panel-lainnya"
+       aria-labelledby="tab-lainnya" hidden>
+    <div class="side-locate">
+      <label class="trans-all">
+        <span class="tog"><input type="checkbox" id="lainnya-all"><i aria-hidden="true"></i></span>
         <span>Tampilkan semua titik banjir</span>
       </label>
     </div>
-    <div class="side-scroll" id="flood-scroll">
-      <p class="side-note" id="flood-note"></p>
-      <input class="side-search" id="flood-search" type="search"
+    <div class="side-scroll" id="lainnya-scroll">
+      <p class="side-note" id="lainnya-note"></p>
+      <input class="side-search" id="lainnya-search" type="search"
              placeholder="Cari kelurahan atau kecamatan..." autocomplete="off"
              aria-label="Cari laporan banjir">
-      <div id="flood-groups"></div>
-      <p class="road-empty" id="flood-empty" hidden>Tidak ada titik banjir yang cocok.</p>
-    </div>
-  </div>
-
-    <button class="acc-head" id="tab-kurasi" aria-expanded="false"
-            aria-controls="panel-kurasi" type="button">
-      <svg class="acc-chev" width="12" height="12" viewBox="0 0 24 24" fill="none"
-           stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
-      <span id="kurasi-title">Kurasi</span>
-    </button>
-<!-- curator points (Studio Atlas) ---------------------------------------- -->
-  <div class="side-panel" id="panel-kurasi"
-       aria-labelledby="tab-kurasi" hidden>
-    <div class="side-locate">
-      <label class="trans-all">
-        <span class="tog"><input type="checkbox" id="kurasi-all"><i aria-hidden="true"></i></span>
-        <span>Tampilkan semua titik kurasi</span>
-      </label>
-    </div>
-    <div class="side-scroll" id="kurasi-scroll">
-      <p class="side-note" id="kurasi-note"></p>
-      <input class="side-search" id="kurasi-search" type="search"
-             placeholder="Cari nama, jenis, kelurahan..." autocomplete="off"
-             aria-label="Cari titik kurasi">
-      <div id="kurasi-groups"></div>
-      <p class="road-empty" id="kurasi-empty" hidden>Tidak ada titik kurasi yang cocok.</p>
+      <div id="lainnya-groups"></div>
+      <p class="road-empty" id="lainnya-empty" hidden>Tidak ada yang cocok.</p>
     </div>
   </div>
 
@@ -417,15 +441,16 @@
   </div>
 </div>
 
-<!-- selected curator point detail ----------------------------------------- -->
-<!-- Same card slot and stand-aside rule. The one thing this card must carry
-     that no other card does: why the point exists (the curator's reason) and
-     where it came from, because the layer is edits, not a register. -->
-<div class="card trans-detail" id="kurasi-detail" hidden>
+<!-- selected OSM / curated point detail ------------------------------------- -->
+<!-- The card for the four OpenStreetMap categories and every curated point.
+     One element for both because both are "a named point in a category"; a
+     curated row's card adds the reason and the source, which is the whole
+     difference. The accent colour is set per selection (renderPoiCard). -->
+<div class="card trans-detail" id="poi-detail" hidden>
   <div class="card-top">
-    <div class="eyebrow" id="kr-eyebrow"></div>
-    <div class="card-name" id="kr-name"></div>
-    <button class="card-min" id="kr-min" type="button"
+    <div class="eyebrow" id="pd-eyebrow"></div>
+    <div class="card-name" id="pd-name"></div>
+    <button class="card-min" id="pd-min" type="button"
             aria-label="Perkecil info" title="Perkecil info">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
            stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -433,10 +458,10 @@
       </svg>
     </button>
   </div>
-  <div class="ladder" id="kr-ladder"></div>
-  <div class="kids" id="kr-facts"></div>
+  <div class="ladder" id="pd-ladder"></div>
+  <div class="kids" id="pd-facts"></div>
   <div class="card-foot">
-    <span class="code" id="kr-source"></span>
+    <span class="code" id="pd-source"></span>
   </div>
 </div>
 
@@ -483,8 +508,10 @@
   <a href="https://berita.depok.go.id/" rel="noopener">Dishub Kota Depok</a> ·
   Puskesmas: <a href="https://dinkes.depok.go.id/User/portal_puskesmas" rel="noopener">Dinkes Kota Depok</a> ·
   Faskes: <a href="https://www.openstreetmap.org/copyright" rel="noopener">OpenStreetMap</a> (ODbL) ·
+  Tempat ibadah / perdagangan / ruang terbuka / polisi / damkar / kampus:
+  <a href="https://www.openstreetmap.org/copyright" rel="noopener">OpenStreetMap</a> (ODbL) ·
   Banjir: <a href="https://petabencana.id" rel="noopener">PetaBencana.id</a> ·
-  Kurasi: <a href="https://portal.dibotak.com/ensiklopedia-studio/" rel="noopener">Studio Atlas</a>
+  Titik kurasi: <a href="https://portal.dibotak.com/ensiklopedia-studio/" rel="noopener">Studio Atlas</a>
 </footer>
 
 <script src="/vendor/maplibre-gl.js"></script>
@@ -494,6 +521,7 @@
 <script src="/src/schools.js"></script>
 <script src="/src/puskesmas.js"></script>
 <script src="/src/faskes.js"></script>
+<script src="/src/poi.js"></script>
 <script src="/src/kurasi.js"></script>
 <script src="/src/flood.js"></script>
 <script src="/src/app.js"></script>

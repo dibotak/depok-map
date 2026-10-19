@@ -133,6 +133,10 @@ SOURCE = ("Daftar resmi portal Puskesmas Dinkes Kota Depok (37 puskesmas, "
           "11 kecamatan). Pin dari OpenStreetMap dan Google Maps; jadwal 24 jam "
           "dari Dinkes (Maret 2025).")
 
+# Portal kecamatan spelling -> the boundary layer's (public/data, data.js).
+# Only one kecamatan differs; the map groups point panels by this string.
+KEC_CANON = {"Sukmajaya": "Sukma Jaya"}
+
 
 def norm(name):
     """Match key: lowercase, alnum only, UPTD/Kelurahan/Puskesmas words gone."""
@@ -271,7 +275,11 @@ def gmaps_pins():
 
 def base_record(key, name, kind, kec, sub):
     return {
-        "key": key, "name": name, "kind": kind, "district": kec,
+        "key": key, "name": name, "kind": kind,
+        # The portal writes the kecamatan one way, the boundary layer (and
+        # therefore every other payload) another; the point panels group by
+        # this string, so it has to be the boundary layer's spelling.
+        "district": KEC_CANON.get(kec, kec),
         "address": "", "phone": "", "opening_hours": "",
         "website": f"https://{sub}.depok.go.id/" if sub else "",
         "lat": None, "lon": None, "osm": "", "pin_src": None,
