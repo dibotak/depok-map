@@ -69,6 +69,15 @@ would 404 every asset — use `map.dibotak.com`, not a subpath.
     nature, collapsed sections sit as quiet headers between open ones, and
     `setTab()` is the single owner of the open state — exactly one panel is
     ever open.
+  - **The panel owns the height.** `.side-head` is a fixed strip,
+    `--side-head-h` tall (32px, or 48px once the touch controls grow the
+    buttons), so the accordion content below is the sidebar height minus that
+    strip. `.side-body` is `overflow: hidden` — the sidebar itself never
+    scrolls; the open panel is `flex: 1` and its own `.side-scroll` does the
+    scrolling. Only on a very short column (landscape phones, `max-height:
+    560px`) can the nine collapsed headers alone exceed the sidebar, and just
+    there the fallback `overflow-y: auto` comes back so no section is
+    stranded.
   - **One engine, six panels.** The five category panels and *Lainnya* all
     render through one row model and one `renderPanel()` (see *One list
     engine* below), which is why a curated point and a register entry share
@@ -81,6 +90,14 @@ would 404 every asset — use `map.dibotak.com`, not a subpath.
   scrolled into view. The pin takes the whole click — the kecamatan/kelurahan
   underneath does not also react, because a pin plus an area in one click would
   fight over the card slot.
+- **Zoomed out, points become counts.** Every show-all source clusters (the
+  one selected marker never does), so a family with many points on screen
+  merges into a count bubble instead of a hail of dots. Clicking a bubble
+  zooms to the cluster's expansion zoom — the level where it breaks apart —
+  and past zoom 14 the individual pins are always the whole picture. A bubble
+  is an aggregate, not a place, so it gets the pointer cursor and takes the
+  click before the pins and the polygons underneath; it never opens a card
+  itself.
 - **Area select has its own toggle**, the second round button in the topbar's
   left column, right under the sidebar button (on by default, remembered like
   the theme). Off, bare map clicks leave the polygons alone, so pins can be
@@ -142,6 +159,14 @@ would 404 every asset — use `map.dibotak.com`, not a subpath.
   current selection, zoom, and selected road all survive the style swap.
 - **Deep links**: `#id3276031005` for a kelurahan, `#kec/id3276040` for a
   kecamatan. Both are shareable and survive a reload.
+- **The distance read-out is a zoom gesture, not chrome.** It appears on every
+  zoom event and fades 5 s after the last one, so "how far is that?" is
+  answerable mid-gesture without a permanent box at the bottom of the map
+  (where the legend and the licence line already live). It draws a round
+  distance — 10 m to 50 km — at exactly that many pixels, corrected for the
+  centre latitude, so it stays honest at every zoom. It sits under the zoom
+  buttons and is `aria-hidden`; the zoom buttons already announce the zoom to
+  assistive tech.
 
 - **Mobile: nothing overlaps, everything is tappable.** The answer card clears
   the licence line by a *measured* amount — the attribution wraps to 53px at

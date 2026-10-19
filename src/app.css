@@ -325,6 +325,9 @@ body.card-collapsed .card { padding-bottom: 10px; }
   left: max(12px, env(safe-area-inset-left));
   width: min(316px, calc(100vw - 24px));
   display: flex; flex-direction: column;
+  /* The head is a fixed 32px strip (48px on the 40px touch controls) and the
+     accordion content below it takes everything else -- see .side-body. */
+  --side-head-h: 32px;
   background: var(--surface);
   -webkit-backdrop-filter: saturate(180%) blur(14px);
   backdrop-filter: saturate(180%) blur(14px);
@@ -339,10 +342,15 @@ body.card-collapsed .card { padding-bottom: 10px; }
 
 .side-head {
   display: flex; align-items: center; justify-content: flex-end; gap: 8px;
-  padding: 8px;
+  /* Exactly the 32px the content's min-height subtracts. The two 30px icon
+     buttons keep 1px of breathing room; the focus ring is inset so the
+     sidebar's own overflow:hidden cannot clip it. */
+  height: var(--side-head-h);
+  padding: 0 8px;
   border-bottom: 1px solid var(--border);
   flex: none;
 }
+.side-head button:focus-visible { outline-offset: -3px; }
 .side-close {
   flex: none; width: 30px; height: 30px;
   display: flex; align-items: center; justify-content: center;
@@ -354,13 +362,15 @@ body.card-collapsed .card { padding-bottom: 10px; }
 /* --- accordion sections --- */
 /* Stacked collapsible headers instead of a tab strip. The old strip overflowed
    by ~76px beside the theme and close buttons and had to scroll its own row;
-   stacking removed the fit problem entirely. The column is owned by one
-   scroller (.side-body); the open panel is flex:1, so it keeps exactly the
-   remaining height and its internal .side-scroll keeps scrolling as before. */
+   stacking removed the fit problem entirely. The column is .side-body, whose
+   content is exactly the sidebar height minus the 32px head; the open panel is
+   flex:1, so it keeps that whole height and its internal .side-scroll does the
+   scrolling. .side-body itself does not scroll: an outer scrollbar beside the
+   panel's own read as the list having two ends. */
 .side-body {
-  flex: 1; min-height: 0;
+  flex: 1; min-height: calc(100% - var(--side-head-h, 32px));
   display: flex; flex-direction: column;
-  overflow-y: auto; overflow-x: hidden;
+  overflow: hidden;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
@@ -371,6 +381,12 @@ body.card-collapsed .card { padding-bottom: 10px; }
 .side-body::-webkit-scrollbar-thumb {
   background: var(--border-strong); border-radius: 999px;
   border: 3px solid transparent; background-clip: content-box;
+}
+/* On a very short column (landscape phones) the nine headers alone can exceed
+   the sidebar; clipping would strand whole sections, so there -- and only
+   there -- the column gets its scrollbar back and the min-height stands down. */
+@media (max-height: 560px) {
+  .side-body { overflow-y: auto; min-height: 0; }
 }
 .acc-head {
   flex: none;
@@ -776,6 +792,8 @@ body.side-open .card {
   /* Tap targets: 44px is the WCAG 2.5.5 / iOS minimum for anything a thumb has
      to hit. The 30x30 icon buttons and 30px-tall rows measured well under it. */
   .side-theme, .side-close { width: 40px; height: 40px; }
+  /* The head grows with its buttons; the content's min-height follows it. */
+  .sidebar { --side-head-h: 48px; }
   .acc-head { padding: 10px 13px; min-height: 44px; }
   .locate-btn { height: 40px; }
   .card-min { width: 40px; height: 40px; top: 6px; right: 6px; }
@@ -840,6 +858,41 @@ body.side-open .card {
 
 
 
+/* ---------- zoom distance read-out ---------- */
+/* Appears on the first zoom event and fades 5 s after the last one (JS adds
+   .is-on). Anchored under the navigation control rather than at the bottom of
+   the map, where the legend and the attribution strip already live, and where
+   the card sits on a phone. */
+.zoom-scale {
+  position: absolute; z-index: 850;
+  right: max(14px, env(safe-area-inset-right));
+  top: calc(max(16px, env(safe-area-inset-top)) + 122px);
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 5px 9px 6px;
+  background: var(--surface);
+  -webkit-backdrop-filter: saturate(180%) blur(14px);
+  backdrop-filter: saturate(180%) blur(14px);
+  border: 1px solid var(--border); border-radius: var(--r-sm);
+  box-shadow: var(--shadow-1);
+  color: var(--ink-2);
+  font-size: 10.5px; font-weight: 650; line-height: 1;
+  pointer-events: none;
+  opacity: 0; transform: translateY(4px);
+  transition: opacity var(--dur) var(--ease), transform var(--dur) var(--ease);
+}
+.zoom-scale.is-on { opacity: 1; transform: none; }
+.zoom-scale .zs-bar {
+  position: relative; height: 2px; width: 40px;
+  background: var(--ink-2); border-radius: 1px;
+}
+.zoom-scale .zs-bar::before,
+.zoom-scale .zs-bar::after {
+  content: ''; position: absolute; top: -2px; width: 2px; height: 6px;
+  background: inherit; border-radius: 1px;
+}
+.zoom-scale .zs-bar::before { left: 0; }
+.zoom-scale .zs-bar::after { right: 0; }
+
 /* ---------- attribution ---------- */
 .attrib {
   position: absolute; z-index: 700;
@@ -883,6 +936,8 @@ body.side-open .card {
   .maplibregl-ctrl-group button { width: 40px; height: 40px; }
   .maplibregl-ctrl-group button + button { margin-top: 0; }
   .maplibregl-ctrl-icon { transform: scale(1.2); }
+  /* Same 40px buttons make the control stack taller; the read-out clears it. */
+  .zoom-scale { top: calc(max(10px, env(safe-area-inset-top)) + 152px); }
   .clear { width: 40px; height: 40px; }
   .attrib {
     left: 10px; right: 10px; max-width: none;

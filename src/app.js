@@ -125,7 +125,43 @@ const map = new maplibregl.Map({
 });
 
 map.addControl(new maplibregl.NavigationControl({ visualizePitch: false }), 'top-right');
-map.addControl(new maplibregl.ScaleControl({ maxWidth: 110, unit: 'metric' }), 'bottom-right');
+
+/* ---------- zoom distance read-out ---------- */
+/* A zoomable map with no visible scale leaves "how far is that?" unanswerable,
+   but a scale in permanent residence is one more box of chrome. The read-out
+   therefore works like the zoom gesture itself: it appears the moment the zoom
+   changes and fades 5 s after the last change (the timer restarts on every
+   zoom event, so a continuous pinch keeps it up). The distance is a round
+   number and the bar is exactly that many pixels, so it stays honest at every
+   latitude and zoom instead of being a decorative label. */
+const zoomScaleEl = document.getElementById('zoom-scale');
+const zoomScaleText = document.getElementById('zoom-scale-text');
+const zoomScaleBar = zoomScaleEl ? zoomScaleEl.querySelector('.zs-bar') : null;
+const ZOOM_SCALE_STEPS = [10, 20, 50, 100, 200, 500, 1000, 2000, 5000,
+  10000, 20000, 50000];
+const ZOOM_SCALE_MAX_PX = 96;
+let zoomScaleTimer = null;
+
+function updateZoomScale() {
+  if (!zoomScaleEl || !zoomScaleBar) return;
+  // Metres per pixel at the map centre: 156543 m/px at zoom 0 on the equator
+  // (the Web Mercator base), halved per zoom level, corrected for the
+  // latitude's shrinking degree.
+  const lat = map.getCenter().lat;
+  const mpp = 156543.03392 * Math.cos(lat * Math.PI / 180)
+    / Math.pow(2, map.getZoom());
+  // The largest round distance the bar can show at a sane pixel width.
+  let step = ZOOM_SCALE_STEPS[0];
+  for (const s of ZOOM_SCALE_STEPS) {
+    if (s / mpp <= ZOOM_SCALE_MAX_PX) step = s;
+  }
+  zoomScaleBar.style.width = Math.round(step / mpp) + 'px';
+  zoomScaleText.textContent = step >= 1000 ? `${step / 1000} km` : `${step} m`;
+  zoomScaleEl.classList.add('is-on');
+  clearTimeout(zoomScaleTimer);
+  zoomScaleTimer = setTimeout(() => zoomScaleEl.classList.remove('is-on'), 5000);
+}
+map.on('zoom', updateZoomScale);
 
 const SRC_KEC = 'kecamatan';
 const SRC_KEL = 'kelurahan';
@@ -157,6 +193,30 @@ const SRC_RUANG_ALL = 'ruang-semua';
 const SRC_FLOOD = 'banjir-terpilih';
 const SRC_FLOOD_ALL = 'banjir-semua';
 let mapReady = false;
+
+/* Every point family draws in two sources: the selected marker (at most one
+   feature) and the show-all context layer. The context source clusters, so a
+   zoomed-out city shows count bubbles instead of a hail of dots; clicking a
+   bubble zooms to where it breaks apart and the pins appear one by one. The
+   selected source never clusters -- it carries the one point the user asked
+   to see, and it must stay a dot at every zoom. */
+const CLUSTER = { cluster: true, clusterRadius: 46, clusterMaxZoom: 14 };
+
+/* The eight point families, in layer-creation order. The names double as
+   palette keys and layer-id stems; SRC_PAIR (with the sources) is declared
+   further down, next to the row model that fills them. */
+const POINT_FAMILIES = ['school', 'puskes', 'faskes', 'darurat', 'ibadah',
+  'dagang', 'ruang', 'flood'];
+
+/** Empty GeoJSON. Sources get the explicit FeatureCollection, never bare
+ *  coordinates -- a source whose `type` is undefined loads but resolves zero
+ *  features (the trap the kelurahan source below documents). */
+const emptyFC = () => ({ type: 'FeatureCollection', features: [] });
+
+function addPointSources(sel, all) {
+  if (!map.getSource(sel)) map.addSource(sel, { type: 'geojson', data: emptyFC() });
+  if (!map.getSource(all)) map.addSource(all, { type: 'geojson', data: emptyFC(), ...CLUSTER });
+}
 
 /**
  * Repaint for the current view.
@@ -265,6 +325,20 @@ function paint() {
     ]),
   ]) {
     if (map.getLayer(id)) map.setPaintProperty(id, prop, val);
+  }
+
+  // The count bubbles follow their family's colour, and their text uses the
+  // theme halo -- white on the light theme's dark fills, near-black on the
+  // dark theme's pastels -- so a count stays readable in both.
+  for (const fam of Object.keys(SRC_PAIR)) {
+    if (map.getLayer(`${fam}-cluster`)) {
+      map.setPaintProperty(`${fam}-cluster`, 'circle-color', p[fam]);
+      map.setPaintProperty(`${fam}-cluster`, 'circle-stroke-color', p.halo);
+    }
+    if (map.getLayer(`${fam}-cluster-count`)) {
+      map.setPaintProperty(`${fam}-cluster-count`, 'text-color', p.halo);
+      map.setPaintProperty(`${fam}-cluster-count`, 'text-halo-color', p[fam]);
+    }
   }
 
   if (state.view === 'city') {
@@ -468,14 +542,13 @@ function addLayers() {
   }
   // Secondary schools. Same two-source shape as the transport routes: a thin
   // context layer of every school, and the selected one on top of it.
-  for (const id of [SRC_SCHOOL_ALL, SRC_SCHOOL]) {
-    if (!map.getSource(id)) {
-      map.addSource(id, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-    }
-  }
+  addPointSources(SRC_SCHOOL, SRC_SCHOOL_ALL);
   if (!map.getLayer('school-all')) {
     map.addLayer({
       id: 'school-all', type: 'circle', source: SRC_SCHOOL_ALL,
+      // Clusters draw in their own layers; `point_count` is how a cluster
+      // feature is told apart from a plain point.
+      filter: ['!', ['has', 'point_count']],
       paint: {
         'circle-radius': ['interpolate', ['linear'], ['zoom'],
           11, 3, 13, 4.5, 16, 7],
@@ -518,14 +591,11 @@ function addLayers() {
   }
   // Puskesmas. Same three-layer shape as the schools: a thin context layer of
   // every pinned facility, and the selected one with its label on top.
-  for (const id of [SRC_PUSKES_ALL, SRC_PUSKES]) {
-    if (!map.getSource(id)) {
-      map.addSource(id, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-    }
-  }
+  addPointSources(SRC_PUSKES, SRC_PUSKES_ALL);
   if (!map.getLayer('puskes-all')) {
     map.addLayer({
       id: 'puskes-all', type: 'circle', source: SRC_PUSKES_ALL,
+      filter: ['!', ['has', 'point_count']],
       paint: {
         'circle-radius': ['interpolate', ['linear'], ['zoom'],
           11, 3, 13, 4.5, 16, 7],
@@ -568,14 +638,11 @@ function addLayers() {
   }
   // Faskes (OSM), the complement to the Dinkes puskesmas register. Same shape
   // as the puskesmas layers, in lime so the two health layers stay apart.
-  for (const id of [SRC_FASKES_ALL, SRC_FASKES]) {
-    if (!map.getSource(id)) {
-      map.addSource(id, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-    }
-  }
+  addPointSources(SRC_FASKES, SRC_FASKES_ALL);
   if (!map.getLayer('faskes-all')) {
     map.addLayer({
       id: 'faskes-all', type: 'circle', source: SRC_FASKES_ALL,
+      filter: ['!', ['has', 'point_count']],
       paint: {
         'circle-radius': ['interpolate', ['linear'], ['zoom'],
           11, 3, 13, 4.5, 16, 7],
@@ -619,14 +686,11 @@ function addLayers() {
   // Flood reports (PetaBencana.id). Blue -- the last family on the map. These
   // are curated report locations, not sensor readings, so the layers carry the
   // same two-source shape as everything else.
-  for (const id of [SRC_FLOOD_ALL, SRC_FLOOD]) {
-    if (!map.getSource(id)) {
-      map.addSource(id, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-    }
-  }
+  addPointSources(SRC_FLOOD, SRC_FLOOD_ALL);
   if (!map.getLayer('flood-all')) {
     map.addLayer({
       id: 'flood-all', type: 'circle', source: SRC_FLOOD_ALL,
+      filter: ['!', ['has', 'point_count']],
       paint: {
         'circle-radius': ['interpolate', ['linear'], ['zoom'],
           11, 3, 13, 4.5, 16, 7],
@@ -678,15 +742,12 @@ function addLayers() {
     [SRC_DAGANG, SRC_DAGANG_ALL, PALETTE[state.theme].dagang],
     [SRC_RUANG, SRC_RUANG_ALL, PALETTE[state.theme].ruang],
   ]) {
-    for (const id of [all, sel]) {
-      if (!map.getSource(id)) {
-        map.addSource(id, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-      }
-    }
+    addPointSources(sel, all);
     const base = sel.replace('-terpilih', '');
     if (!map.getLayer(`${base}-all`)) {
       map.addLayer({
         id: `${base}-all`, type: 'circle', source: all,
+        filter: ['!', ['has', 'point_count']],
         paint: {
           'circle-radius': ['interpolate', ['linear'], ['zoom'],
             11, 3, 13, 4.5, 16, 7],
@@ -822,6 +883,50 @@ function addLayers() {
       });
     }
   }
+  // The count bubbles: one circle + one count per family, inserted UNDER the
+  // family's context layer so a bubble never covers a pin. Created here, after
+  // every family's layers exist, because the context layer is the insertion
+  // point. A cluster source stops producing cluster features past
+  // clusterMaxZoom, so zooming in is what turns a bubble back into pins --
+  // which is exactly what clicking one does.
+  for (const [fam, pair] of Object.entries(SRC_PAIR)) {
+    const color = PALETTE[state.theme][fam];
+    if (!map.getLayer(`${fam}-cluster`)) {
+      map.addLayer({
+        id: `${fam}-cluster`, type: 'circle', source: pair[1],
+        filter: ['has', 'point_count'],
+        paint: {
+          'circle-color': color,
+          'circle-opacity': 0.9,
+          'circle-stroke-width': 2,
+          'circle-stroke-color': PALETTE[state.theme].halo,
+          'circle-radius': ['step', ['get', 'point_count'],
+            13, 10, 16, 100, 20, 1000, 24],
+        },
+      }, `${fam}-all`);
+    }
+    if (!map.getLayer(`${fam}-cluster-count`)) {
+      map.addLayer({
+        id: `${fam}-cluster-count`, type: 'symbol', source: pair[1],
+        filter: ['has', 'point_count'],
+        layout: {
+          'text-field': ['get', 'point_count_abbreviated'],
+          'text-font': ['Noto Sans Bold'],
+          'text-size': ['step', ['get', 'point_count'],
+            11.5, 100, 12.5, 1000, 13.5],
+          'text-allow-overlap': true,
+        },
+        paint: {
+          // The count flips with the theme (white on the light theme's dark
+          // fills, near-black on the dark theme's pastels): the same halo the
+          // pins already put behind their labels.
+          'text-color': PALETTE[state.theme].halo,
+          'text-halo-color': color,
+          'text-halo-width': 0.8,
+        },
+      }, `${fam}-all`);
+    }
+  }
   mapReady = true;
   paint();
 }
@@ -862,6 +967,26 @@ map.on('click', e => {
   // there is nothing to hit, and querying would only warn about layers that do
   // not exist yet. Same gate paint() uses.
   if (!mapReady) return;
+  // Count bubbles first. A bubble is an aggregate, not a place: clicking it is
+  // a zoom-in gesture, expanding to the zoom where it breaks apart so the pins
+  // it stood for appear. Only when the pins themselves are under the pointer
+  // does the point path below run.
+  for (const [fam, pair] of Object.entries(SRC_PAIR)) {
+    const bubble = map.queryRenderedFeatures(e.point, { layers: [`${fam}-cluster`] });
+    if (!bubble.length) continue;
+    const cid = bubble[0].properties && bubble[0].properties.cluster_id;
+    if (cid == null) continue;
+    const src = map.getSource(pair[1]);
+    if (!src || typeof src.getClusterExpansionZoom !== 'function') return;
+    const center = bubble[0].geometry.coordinates.slice();
+    // MapLibre 5 returns a Promise here; the old callback form was removed.
+    src.getClusterExpansionZoom(cid).then(zoom => {
+      // +0.5 so the click lands past the split point, not exactly on it: at
+      // the expansion zoom the bubble is still a bubble on some renderers.
+      map.easeTo({ center, zoom: Math.min(zoom + 0.5, map.getMaxZoom()), duration: 600 });
+    }).catch(() => { /* the source changed under the click; leave the camera */ });
+    return;
+  }
   for (const fam of PIN_FAMILIES) {
     const hit = map.queryRenderedFeatures(e.point, { layers: fam.layers });
     if (!hit.length) continue;
@@ -927,6 +1052,11 @@ for (const fam of PIN_FAMILIES) {
     map.on('mousemove', layer, () => { map.getCanvas().style.cursor = 'pointer'; });
     map.on('mouseout', layer, () => { map.getCanvas().style.cursor = ''; });
   }
+}
+// A count bubble is a control too: it says "more here" and clicking it zooms in.
+for (const fam of POINT_FAMILIES) {
+  map.on('mousemove', `${fam}-cluster`, () => { map.getCanvas().style.cursor = 'pointer'; });
+  map.on('mouseout', `${fam}-cluster`, () => { map.getCanvas().style.cursor = ''; });
 }
 for (const layer of ['kec-fill', 'kel-fill']) {
   map.on('mousemove', layer, () => {
@@ -3425,7 +3555,7 @@ window.__depok = {
   map, state, KEL, KEC, rank, goCity, openDistrict, selectVillage, selectDistrict,
   applyTheme, setSidebar, setTab, renderAreaList, renderRoads, renderPanels,
   ROADS, SCHOOLS, PUSKESMAS, FASKES, POI, KURASI, FLOOD, PANEL_ROWS,
-  selectPoint, setAreaSelect, togglePanelAll,
+  selectPoint, setAreaSelect, togglePanelAll, updateZoomScale,
   // The per-layer highlight* functions became one global selector; the old
   // names stay as aliases so an embedder that still calls one keeps working.
   highlightSchool: selectPoint, highlightPuskes: selectPoint,
